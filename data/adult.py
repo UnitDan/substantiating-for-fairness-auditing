@@ -84,9 +84,8 @@ def data_preprocess(rootdir=None):
     df_X, df_Y = _get_input_output_df_(data)
     return df_X, df_Y
 
-def load_data():
+def load_data(protected_vars=['race_White', 'sex_Male']):
     df_X, df_Y = data_preprocess()
-    protected_vars = ['race_White', 'sex_Male']
     protected_idx = [df_X.columns.get_loc(x) for x in protected_vars]
 
     X, y = convert_df_to_tensor(df_X, df_Y)
@@ -152,179 +151,50 @@ def _get_input_output_df_(data):
 
 
 class Adult_gen(Data_gen):
-    # static variables
-    continous_columns = [0, 1, 2, 3, 4, 26, 33]
-    sensitive_columns = [26, 33]
-    onehot_ranges = [
-        [5, 12],
-        [12, 26],
-        [27, 33],
-        [34, 41]
-    ]
-
     def __init__(self, include_protected_feature) -> None:
         self.X, self.y, self.protected_idx = load_data()
+
+        self.continuous_columns = [0, 1, 2, 3, 4, 26, 33]
+        self.sensitive_columns = [26, 33]
+        self.onehot_ranges = [
+            [5, 12],
+            [12, 26],
+            [27, 33],
+            [34, 41]
+        ]
         self.include_protected_feature = include_protected_feature
-        self.columns_to_keep = [i for i in range(self.X.shape[1]) if i not in self.sensitive_columns]
-        self.data_range = torch.quantile(self.X, torch.Tensor([0, 1]), dim=0)
-        
-        self.all_features = self._data2feature(self.X)
-        self.range = torch.quantile(self.all_features, torch.Tensor([0, 1]), dim=0)
 
-    @staticmethod
-    def _data2feature(x):
-        if len(x.shape) == 1:
-            x = x.unsqueeze(dim=0)
+        super()._initialize()
 
-        x1 = x[:, Adult_gen.continous_columns]
-        x2 = x[:, Adult_gen.onehot_ranges[0][0]:Adult_gen.onehot_ranges[0][1]]
-        x3 = x[:, Adult_gen.onehot_ranges[1][0]:Adult_gen.onehot_ranges[1][1]]
-        x4 = x[:, Adult_gen.onehot_ranges[2][0]:Adult_gen.onehot_ranges[2][1]]
-        x5 = x[:, Adult_gen.onehot_ranges[3][0]:Adult_gen.onehot_ranges[3][1]]
+    def _data2feature(self, data):
+        if len(data.shape) == 1:
+            data = data.unsqueeze(dim=0)
 
-        new_x = [x1]
-        for xx in [x2, x3, x4, x5]:
-            xx = onehot_to_idx(xx)
-            new_x.append(xx)
-        new_x = torch.concat(new_x, dim=1)
-        return new_x
+        feature1 = data[:, self.continuous_columns]
+        feature2 = data[:, self.onehot_ranges[0][0]:self.onehot_ranges[0][1]]
+        feature3 = data[:, self.onehot_ranges[1][0]:self.onehot_ranges[1][1]]
+        feature4 = data[:, self.onehot_ranges[2][0]:self.onehot_ranges[2][1]]
+        feature5 = data[:, self.onehot_ranges[3][0]:self.onehot_ranges[3][1]]
+
+        features = [feature1]
+        for x in [feature2, feature3, feature4, feature5]:
+            x = onehot_to_idx(x)
+            features.append(x)
+        features = torch.concat(features, dim=1)
+        return features
     
-    @staticmethod
-    def _feature2data(x):
-        if len(x.shape) == 1:
-            x = x.unsqueeze(dim=0)
+    def _feature2data(self, feature):
+        if len(feature.shape) == 1:
+            feature = feature.unsqueeze(dim=0)
         
-        new_x = []
-        new_x.append(x[:, [0, 1, 2, 3, 4]])
-        new_x.append(idx_to_onehot(x[:, 7], 7))
-        new_x.append(idx_to_onehot(x[:, 8], 14))
-        new_x.append(x[:, 5].unsqueeze(0).T)
-        new_x.append(idx_to_onehot(x[:, 9], 6))
-        new_x.append(x[:, 6].unsqueeze(0).T)
-        new_x.append(idx_to_onehot(x[:, 10], 7))
-        new_x = torch.concat(new_x, dim=1)
-        return new_x
-    
-    def gen_by_range(self, n=1):
-        l, u = self.range[0], self.range[1]
-        xs = torch.rand((n, self.all_features.shape[1]))
-        xs = (l + xs*(u - l)).to(torch.int)
-        xs = self._feature2data(xs)
-
-        if not self.include_protected_feature:
-            xs = xs[:, self.columns_to_keep]
-
-        return xs
-    
-    def gen_by_distribution(self, n=1):
-        idxs = torch.randint(self.all_features.shape[0], (n, self.all_features.shape[1]))
-        xs = []
-        for i in range(n):
-            x = self.all_features[idxs[i], torch.arange(self.all_features.shape[1])]
-            xs.append(x)
-        xs = torch.concat(xs, dim=0)
-        xs = self._feature2data(xs)
-
-        if not self.include_protected_feature:
-            xs = xs[:, self.columns_to_keep]
-
-        return xs
-    
-    def clip(self, x, with_protected_feature=None):
-        if with_protected_feature is None:
-            with_protected_feature = self.include_protected_feature
-        def _onehot(x):
-            o = torch.zeros_like(x)
-            o[torch.arange(x.shape[0]), torch.argmax(x, dim=1)] = 1
-            return o
-        
-        if len(x.shape) == 1:
-            x = x.unsqueeze(0)
-        
-        if not with_protected_feature:
-            xx = torch.zeros((x.shape[0], x.shape[1] + len(Adult_gen.sensitive_columns)))
-            xx[:, self.columns_to_keep] = x
-            x = xx
-        
-        for r in Adult_gen.onehot_ranges:
-            x[:, r[0]: r[1]] = _onehot(x[:, r[0]: r[1]])
-        contious_low, contious_high = self.data_range[0][Adult_gen.continous_columns], self.data_range[1][Adult_gen.continous_columns]
-        x[:, Adult_gen.continous_columns] = x[:, Adult_gen.continous_columns].clip(contious_low, contious_high)
-        x = torch.round(x)
-
-        if not with_protected_feature:
-            x = x[:, self.columns_to_keep]
-
-        return x
-
-    def perturb_within_epsilon(self, x, dx=None, epsilon=None):
-        def _gen_new(x):
-            l, u = self.range[0], self.range[1]
-            feature_x = self._data2feature(x)
-
-            new_ = []
-            for i in range(feature_x.shape[1]):
-                if feature_x[0][i] < u[i]:
-                    p = torch.zeros_like(feature_x[0])
-                    p[i] = 1
-                    new_.append((feature_x + p))
-                    # new_.append((feature_x + p).int())
-                if feature_x[0][i] > l[i]:
-                    p = torch.zeros_like(feature_x[0])
-                    p[i] = -1
-                    new_.append((feature_x + p))
-                    # new_.append((feature_x + p).int())
-            # print('-----------------------')
-            # print(feature_x.int())
-            # print()
-            # print(*[i for i in new_], sep='\n')
-            # print('-----------------------')
-            return self._feature2data(torch.concat(new_, dim=0))
-        x_pert = _gen_new(x)
-        distances = dx(x_pert, x, itemwise_dist=False)
-        # print(distances)
-        # print(distances < 1/epsilon)
-        id_to_choose = torch.where(distances < 1/epsilon)[0]
-        return x_pert[id_to_choose]
-            
-
-    def random_perturb(self, x, dx=None, epsilon=None):
-        def _gen_new(x):
-            l, u = self.range[0], self.range[1]
-            feature_new = torch.rand((1, self.all_features.shape[1]))
-            feature_new = (l + feature_new*(u - l)).to(torch.int)
-
-            feature_x = self._data2feature(x)
-            idx = random.randint(0, len(feature_x))
-            x_pert = feature_x.repeat(feature_x.shape[1], 1)
-            for idx in range(feature_x.shape[1]):
-                if x_pert[idx][idx] < feature_new[0][idx]:
-                    x_pert[idx][idx] += 1
-                elif x_pert[idx][idx] > feature_new[0][idx]:
-                    x_pert[idx][idx] -= 1
-            x_pert = self._feature2data(x_pert)
-            return x_pert
-
-        x_pert = _gen_new(x)
-        distances = dx(x_pert, x, itemwise_dist=False)
-        id_to_choose = torch.where(distances < 1/epsilon)[0]
-        return x_pert[id_to_choose]
-    
-    def data_around(self, x_sample):
-        x_sample = x_sample.squeeze()
-
-        ceil = torch.ceil(x_sample[self.continous_columns])
-        floor = torch.floor(x_sample[self.continous_columns])
-        cont_matrix = torch.concat([ceil, floor]).view(2, -1)
-        choices = [torch.unique(cont_matrix[:, i]) for i in range(cont_matrix.shape[1])]
-        for r in self.onehot_ranges:
-            x_onehot = x_sample[r[0]: r[1]]
-            choices.append(torch.where(x_onehot)[0].float())
-        # print('-------------------------------------------------------------------------')
-        # print(choices)
-        features = torch.cartesian_prod(*choices)
-        # print(len(features))
-        # print('-------------------------------------------------------------------------')
-        datas = self._feature2data(features)
-        return datas
-            
+        data = []
+        data.append(feature[:, [0, 1, 2, 3, 4]])
+        data.append(idx_to_onehot(feature[:, 7], 7))
+        data.append(idx_to_onehot(feature[:, 8], 14))
+        data.append(feature[:, 5].unsqueeze(0).T)
+        data.append(idx_to_onehot(feature[:, 9], 6))
+        data.append(feature[:, 6].unsqueeze(0).T)
+        data.append(idx_to_onehot(feature[:, 10], 7))
+        data = torch.concat(data, dim=1)
+        return data
+                   

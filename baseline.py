@@ -5,7 +5,8 @@ from utils import Unfair_metric, load_model
 from data import adult
 from train_dnn import get_data
 from dnn_models.model import MLP
-from distances import BinaryDistance, NormalizedSquaredEuclideanDistance
+from distances.normalized_mahalanobis_distances import SquaredEuclideanDistance
+from distances.binary_distances import BinaryDistance
 import argparse
 import os
 from datetime import datetime
@@ -62,7 +63,7 @@ if __name__ == '__main__':
 
     print('preparing distances...')
     # prepare distances
-    distance_x_NSE = NormalizedSquaredEuclideanDistance()
+    distance_x_NSE = SquaredEuclideanDistance()
     distance_y = BinaryDistance()
 
     distance_x_NSE.fit(num_dims=dataset.dim_feature(), data_gen=adult_gen)
