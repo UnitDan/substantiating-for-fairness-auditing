@@ -3,9 +3,9 @@ import os
 from torch.utils.data import Dataset, TensorDataset, DataLoader
 from tqdm.auto import tqdm
 
-def load_model(model, model_name, dataset_name, trainer_name, use_protected_attr, id):
+def load_model(model, model_name, dataset_name, trainer_name, use_protected_attr, protected_vars, id):
     root_dir = 'models_to_test'
-    file_name = f'{model_name}_{dataset_name}_{trainer_name}_{"protected" if not use_protected_attr else "no"}_{id}.pth'
+    file_name = f'{model_name}_{dataset_name}_{trainer_name}_{"all-features" if use_protected_attr else "without-"+"-".join(protected_vars)}_{id}.pth'
     model.load(os.path.join(root_dir, file_name))
 
 class Unfair_metric():
@@ -19,7 +19,7 @@ class Unfair_metric():
     
 def get_L_matrix(all_X, all_pred, dx, dy):
     ds = TensorDataset(all_X, all_pred)
-    dl = DataLoader(ds, batch_size=500, shuffle=False)
+    dl = DataLoader(ds, batch_size=3000, shuffle=False)
     L = []
     for b in tqdm(dl):
         dxs = dx(b[0], all_X, itemwise_dist=False)

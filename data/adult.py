@@ -84,7 +84,10 @@ def data_preprocess(rootdir=None):
     df_X, df_Y = _get_input_output_df_(data)
     return df_X, df_Y
 
-def load_data(protected_vars=['race_White', 'sex_Male']):
+def load_data(protected_vars=None):
+    if protected_vars == None:
+        protected_vars = ['race_White', 'sex_Male']
+
     df_X, df_Y = data_preprocess()
     protected_idx = [df_X.columns.get_loc(x) for x in protected_vars]
 
@@ -151,11 +154,11 @@ def _get_input_output_df_(data):
 
 
 class Adult_gen(Data_gen):
-    def __init__(self, include_protected_feature) -> None:
+    def __init__(self, sensitive_columns, include_protected_feature) -> None:
         self.X, self.y, self.protected_idx = load_data()
 
         self.continuous_columns = [0, 1, 2, 3, 4, 26, 33]
-        self.sensitive_columns = [26, 33]
+        # self.sensitive_columns = [26, 33]
         self.onehot_ranges = [
             [5, 12],
             [12, 26],
@@ -164,7 +167,7 @@ class Adult_gen(Data_gen):
         ]
         self.include_protected_feature = include_protected_feature
 
-        super()._initialize()
+        super()._initialize(sensitive_columns=sensitive_columns)
 
     def _data2feature(self, data):
         if len(data.shape) == 1:

@@ -107,9 +107,10 @@ class MahalanobisDistances(Distance):
                 shape (n_samples_1, n_samples_2)
         """
 
+        X1 = X1.unsqueeze(0) if len(X1.shape) == 1 else X1  # (N, D)
+        X2 = X2.unsqueeze(0) if len(X2.shape) == 1 else X2  # (M, D)
+
         if itemwise_dist:
-            X1 = X1.unsqueeze(0) if len(X1.shape) == 1 else X1  # (N, D)
-            X2 = X2.unsqueeze(0) if len(X2.shape) == 1 else X2  # (M, D)
             np.testing.assert_array_equal(
                 X1.shape,
                 X2.shape,
@@ -191,4 +192,4 @@ class ProtectedSEDistances(SquaredEuclideanDistance):
         super().fit(num_dims, data_gen)
         self._protected_attributes = protected_idx
         for p in self._protected_attributes:
-            self.sigma[p][p] = 1e-5
+            self.sigma[p][p] = 0

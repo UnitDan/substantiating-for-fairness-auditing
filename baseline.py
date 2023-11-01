@@ -5,7 +5,8 @@ from utils import Unfair_metric, load_model
 from data import adult
 from train_dnn import get_data
 from dnn_models.model import MLP
-from distances.normalized_mahalanobis_distances import SquaredEuclideanDistance
+from distances.normalized_mahalanobis_distances import SquaredEuclideanDistance, ProtectedSEDistances
+from distances.sensitive_subspace_distances import LogisticRegSensitiveSubspace
 from distances.binary_distances import BinaryDistance
 import argparse
 import os
@@ -35,41 +36,56 @@ class Logger:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--seeker', type=str, choices=['dx_select', 'select', 'distribution', 'range', 'white', 'black'])
+    parser.add_argument('--seeker', type=str, \
+                        choices=['dx_select', 'select', 'distribution', 'range', 'white', 'black'])
+    parser.add_argument('--protected_vars', nargs='*')
     parser.add_argument('--dnn_model_id', type=int, choices=[0, 1, 2], default=0)
+    parser.add_argument('--dx', type=str, choices=['SE', 'Causal', 'LR'], default='Causal')
+    parser.add_argument('--epsilon', type=float)
     parser.add_argument('--use_protected_attr', action='store_true')
     parser.add_argument('--log_path', type=str)
     parser.add_argument('--max_query', type=int, default=100000)
-    parser.add_argument('--repeat', type=int, default=1000)
+    parser.add_argument('--repeat', type=int, default=20)
     args = parser.parse_args()
 
     rand_seed = args.dnn_model_id
     use_protected_attr = args.use_protected_attr
 
     print('preparing data and model...')
-    dataset, train_dl, test_dl = get_data(adult, rand_seed)
+    dataset, train_dl, test_dl = get_data(adult, rand_seed, args.protected_vars)
     dataset.use_protected_attr = use_protected_attr
     in_dim = dataset.dim_feature()
     out_dim = 2
 
     model = MLP(in_dim, out_dim)
-    load_model(model, 'MLP', 'adult', 'STDTrainer', use_protected_attr=use_protected_attr, id=rand_seed)
+    load_model(model, 'MLP', 'adult', 'STDTrainer', use_protected_attr=use_protected_attr,\
+               protected_vars=args.protected_vars, id=rand_seed)
 
     # prepare data
     all_X, all_y = dataset.data, dataset.labels
     all_pred = model.get_prediction(all_X)
 
-    adult_gen = adult.Adult_gen(include_protected_feature=use_protected_attr)
+    adult_gen = adult.Adult_gen(sensitive_columns=dataset.protected_idxs, \
+                                include_protected_feature=use_protected_attr)
 
     print('preparing distances...')
     # prepare distances
-    distance_x_NSE = SquaredEuclideanDistance()
     distance_y = BinaryDistance()
 
-    distance_x_NSE.fit(num_dims=dataset.dim_feature(), data_gen=adult_gen)
-
-    epsilon = 1
-    unfair_metric = Unfair_metric(dx=distance_x_NSE, dy=distance_y, epsilon=epsilon)
+    if args.dx == 'SE':
+        distance_x = SquaredEuclideanDistance()
+        distance_x.fit(num_dims=dataset.dim_feature(), data_gen=adult_gen)
+        # epsilon = 1
+    elif args.dx == 'Causal':
+        distance_x = ProtectedSEDistances()
+        distance_x.fit(num_dims=dataset.dim_feature(), data_gen=adult_gen, protected_idx=dataset.protected_idxs)
+        # epsilon = 9e9
+    elif args.dx == 'LR':
+        distance_x = LogisticRegSensitiveSubspace()
+        distance_x.fit(all_X, adult_gen, protected_idxs=dataset.protected_idxs)
+        # epsilon = 1e10
+    epsilon = args.epsilon
+    unfair_metric = Unfair_metric(dx=distance_x, dy=distance_y, epsilon=epsilon)
 
     log_path = f'log/{args.log_path}.log'
     logger = Logger(log_path)

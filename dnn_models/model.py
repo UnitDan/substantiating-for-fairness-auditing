@@ -28,4 +28,5 @@ class MLP(nn.Module):
         torch.save(self.state_dict(), save_path)
 
     def load(self, load_path):
-        self.load_state_dict(torch.load(load_path))
+        device = torch.device('cpu')
+        self.load_state_dict(torch.load(load_path, map_location=device))

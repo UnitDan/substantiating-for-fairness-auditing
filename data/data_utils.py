@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader, Dataset
 from abc import ABCMeta, abstractmethod
 import numpy as np
 import random
+from utils import Unfair_metric
 
 class ProtectedDataset(Dataset):
     def __init__(self, data, labels, protected_idxs):
@@ -65,7 +66,8 @@ class Data_gen(metaclass=ABCMeta):
     def __init__(self, include_protected_feature):
         self.include_protected_feature = include_protected_feature
 
-    def _initialize(self):
+    def _initialize(self, sensitive_columns):
+        self.sensitive_columns = sensitive_columns
         self.columns_to_keep = [i for i in range(self.X.shape[1]) if i not in self.sensitive_columns]
         self.data_range = torch.quantile(self.X, torch.Tensor([0, 1]), dim=0)
         
@@ -143,31 +145,61 @@ class Data_gen(metaclass=ABCMeta):
 
         return data
     
-    def random_perturb(self, data_sample, dx=None, epsilon=None):
-        if len(data_sample.shape) == 2:
-            data_sample = data_sample.squeeze()
-        pert = torch.rand(data_sample.shape[0])
-        if dx != None and epsilon != None:
-            pert = dx.adjust_length(data_sample, pert, 1/epsilon).squeeze()
+    def all_possible_perturb_step(self, data_sample, unfair_metric:Unfair_metric):
+        data_sample = data_sample.squeeze()
         
-        pert_sample = self.clip(data_sample + pert)
-        shrink = 1
-        ite = 0
-        while dx(data_sample, pert_sample) > 1/epsilon or torch.all(data_sample==pert_sample):
-            if dx(data_sample, pert_sample) > 1/epsilon:
-                shrink = random.random() * shrink
-            else:
-                shrink = random.random() + shrink
-            ite +=1
-            if ite > 10:
-                pert = torch.rand(data_sample.shape[0])
-                if dx != None and epsilon != None:
-                    pert = dx.adjust_length(data_sample, pert, 1/epsilon).squeeze()
-                ite = 0
-            pert_sample = self.clip(data_sample + shrink*pert)
+        if not self.include_protected_feature:
+            x = torch.zeros((data_sample.shape[0] + len(self.sensitive_columns)))
+            x[self.columns_to_keep] = data_sample
+            data_sample = x
+
+        feature_origin = self._data2feature(data_sample).squeeze()
+        pert = torch.eye(feature_origin.shape[0])
+        pert = torch.concat([pert, -pert], dim=0)
+        pert_feature = feature_origin + pert
+        
+        feature_range = self.get_range('feature')
+        range_filter = torch.logical_and(pert_feature>=feature_range[0], pert_feature<=feature_range[1])
+        pert_feature = pert_feature[torch.all(range_filter, dim=1)]
+
+        pert_data = self._feature2data(pert_feature)
+        if not self.include_protected_feature:
+            pert_data = pert_data[:, self.columns_to_keep]
+            data_sample = data_sample[self.columns_to_keep]
+            # filter out the perturbation on sensitive features
+            pert_data = pert_data[torch.logical_not(torch.all(data_sample, pert_data), dim=1)]
+
+        distances = unfair_metric.dx(data_sample.unsqueeze(0), pert_data, itemwise_dist=False).squeeze()
+        # print(len(pert_data), distances)
+        pert_data = pert_data[distances <= 1/unfair_metric.epsilon]
+        # print(len(pert_data))
+
+        
+
+        return pert_data
+
+    def random_perturb(self, data_sample, unfair_metric:Unfair_metric):
+        searched = torch.Tensor()
+        while 1:
+            step_pert = self.all_possible_perturb_step(data_sample, unfair_metric)
+
+            set1 = {tuple(row.numpy()) for row in searched}
+            set2 = {tuple(row.numpy()) for row in step_pert}
+            if len(set1) == 0 and len(set2) == 0:
+                raise Exception(f'data sample has no possible perturbation with in dx <= 1/epsilon ({1/unfair_metric.epsilon})')
             
-        return pert_sample
-    
+            new_pert = torch.Tensor(list(set2 - set1))
+            if new_pert.shape[0] == 0:
+                break
+
+            pert_data = step_pert[random.randint(0, step_pert.shape[0]-1)]
+            searched = torch.concat([searched, pert_data.unsqueeze(0)], dim=0)
+
+            if random.random() > 0.5:
+                break
+
+        return pert_data
+ 
     def data_around(self, x_sample):
         x_sample = x_sample.squeeze()
 
