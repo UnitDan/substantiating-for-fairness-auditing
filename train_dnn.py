@@ -5,7 +5,7 @@ import argparse
 import random
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from dnn_models.trainer import STDTrainer
-from dnn_models.model import MLP
+from dnn_models.model import MLP, NormMLP
 import os
 
 
@@ -35,7 +35,7 @@ def get_data(data, rand_seed, protected_vars):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default='adult', choices=['adult', 'german', 'bank'])
-    parser.add_argument('--model', type=str, default='MLP', choices=['MLP'])
+    parser.add_argument('--model', type=str, default='MLP', choices=['MLP', 'NormMLP'])
     parser.add_argument('--use_all_features', action='store_true')
     parser.add_argument('--protected_vars', nargs='*')
     parser.add_argument('--trainer', type=str, default='STDTrainer', choices=['STDTrainer'])
@@ -45,15 +45,24 @@ if __name__ == '__main__':
     for i in range(args.repeat):
         data_name = globals()[args.data]
         trainer_name = globals()[args.trainer]
-        model_name = globals()[args.model]
+
+        if args.data == 'adult':
+            data = adult
 
         dataset, train_dl, test_dl = get_data(data_name, i, args.protected_vars)
         dataset.use_protected_attr = args.use_all_features
         feature_dim = dataset.dim_feature()
         output_dim = 2
 
-        model = model_name(input_size=feature_dim, output_size=output_dim)
-        trainer = trainer_name(model, train_dl, test_dl, device='cuda:3', epochs=10, lr=1e-3)
+        if args.data == 'adult':
+            data_gen = adult.Adult_gen(dataset.protected_idxs, args.use_all_features)
+
+        if args.model == 'MLP':
+            model = MLP(input_size=feature_dim, output_size=output_dim)
+        elif args.model == 'NormMLP':
+            data_range = data_gen.get_range('data')
+            model = NormMLP(input_size=feature_dim, output_size=output_dim, data_range=data_range)
+        trainer = trainer_name(model, train_dl, test_dl, device='cuda:1', epochs=10, lr=1e-3)
         trainer.train()
 
         save_dir = 'models_to_test'

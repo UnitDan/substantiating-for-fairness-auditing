@@ -30,3 +30,23 @@ class MLP(nn.Module):
     def load(self, load_path):
         device = torch.device('cpu')
         self.load_state_dict(torch.load(load_path, map_location=device))
+
+class MaxMinNormalizationLayer(nn.Module):
+    def __init__(self, min_value, max_value):
+        super().__init__()
+        self.min_value = torch.nn.Parameter(min_value, requires_grad=False)
+        self.max_value = torch.nn.Parameter(max_value, requires_grad=False)
+
+    def forward(self, x):
+        # 执行Max-Min归一化操作
+        normalized_data = (x - self.min_value) / (self.max_value - self.min_value)
+        return normalized_data
+
+class NormMLP(MLP):
+    def __init__(self, input_size, output_size, data_range):
+        super().__init__(input_size, output_size)
+        self.norm = MaxMinNormalizationLayer(data_range[0], data_range[1])
+
+    def forward(self, x):
+        x = self.norm(x)
+        return super().forward(x)

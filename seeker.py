@@ -106,11 +106,11 @@ class White_seeker(Seeker):
         if self.cur_x0.shape[0] != 0 and torch.all(self.cur_x0 == x):
             g = self.cur_gradient
         else:
-            print('calculate gradient')
+            # print('calculate gradient')
             y0 = self._query_logits(x)[0]
             # loss to minimize
             mis_classification_loss = y0[self.origin_label] - y0[self.mis_label]
-            print('loss', mis_classification_loss)
+            # print('loss', mis_classification_loss)
             mis_classification_loss.backward()
             g = x.grad
             self.cur_x0 = x.clone()
@@ -121,22 +121,26 @@ class White_seeker(Seeker):
         if self.cur_x0.shape[0] != 0 and torch.all(self.cur_x0 == x):
             g = self.cur_gradient
         else:
-            print('calculate gradient')
+            # print('calculate gradient')
             y0 = self._query_logits(x)[0]
             # loss to minimize
             mis_classification_loss = y0[self.origin_label] - y0[self.mis_label]
-            print('loss', mis_classification_loss)
+            # print('loss', mis_classification_loss)
             mis_classification_loss.backward()
             g = x.grad
             self.cur_x0 = x.clone()
             self.cur_gradient = g.clone()
-        print(g)
+        print('gradiant:\n', g)
+        data_range = self.data_gen.get_range('data')
+        print('data scale:\n', data_range[1] - data_range[0])
+        print(g / data_range[1] - data_range[0])
+        print()
         g_direction = g/torch.abs(g)
-        print(g_direction)
+        # print(g_direction)
         x_step = self.data_gen.clip(x + torch.diag(g_direction))
-        print(x_step)
+        # print(x_step)
         x_step = x_step[torch.any(x_step!=x, dim=1)]
-        print(x_step)
+        # print(x_step)
 
         distances = self.unfair_metric.dx(x, x_step, itemwise_dist=False).squeeze()
         d_min, idx = torch.min(distances, dim=0)
@@ -166,12 +170,12 @@ class White_seeker(Seeker):
         lr = origin_lr
 
         while 1:
-            print(lr)
+            # print(lr)
             if x0.grad != None:
                 x0.grad.zero_()
 
             if self.n_query > max_query:
-                print(1)
+                # print(1)
                 return None, self.n_query
             x_new = self.step(x0, lr)
 
@@ -179,7 +183,7 @@ class White_seeker(Seeker):
             if torch.all(x_new == x0):
                 while 1:
                     if self.n_query > max_query:
-                        print(2)
+                        # print(2)
                         return None, self.n_query
                     
                     x_step = self._after_converge_step(x0)
@@ -194,7 +198,7 @@ class White_seeker(Seeker):
                         pair = torch.concat([x0, x_step.unsqueeze(0)], dim=0)
                         return pair, self.n_query
                     else:
-                        print(x_step)
+                        # print(x_step)
                         x0 = x_step.detach()
                         x0.requires_grad = True
                 continue
@@ -216,7 +220,7 @@ class White_seeker(Seeker):
             output1 = self.model.get_prediction(x0)
             output2 = self._query_label(x_new)
             if self.unfair_metric.is_unfair(x0, x_new, output1, output2):
-                print('dx', self.unfair_metric.dx(x0, x_new))
+                # print('dx', self.unfair_metric.dx(x0, x_new))
                 pair = torch.concat([x0, x_new], dim=0)
                 print('out1: directly find a unfair pair when processing gradiant descent')
                 return pair, self.n_query
