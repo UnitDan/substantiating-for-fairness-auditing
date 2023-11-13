@@ -45,7 +45,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_protected_attr', action='store_true')
     parser.add_argument('--log_path', type=str)
     parser.add_argument('--max_query', type=int, default=100000)
-    parser.add_argument('--repeat', type=int, default=20)
+    parser.add_argument('--repeat', type=int, default=1000)
     args = parser.parse_args()
 
     rand_seed = args.dnn_model_id

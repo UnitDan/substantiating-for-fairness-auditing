@@ -117,6 +117,14 @@ class Data_gen(metaclass=ABCMeta):
 
         return data
 
+    # def clip(self, data, with_protected_feature=None):
+    #     '''
+    #     将数据裁剪到限制范围
+    #     数值类型变量，直接裁剪
+    #     onehot向量,等比例放缩,使得
+    #     '''
+    #     pass
+
     def clip(self, data, with_protected_feature=None):
         if with_protected_feature is None:
             with_protected_feature = self.include_protected_feature
@@ -213,3 +221,13 @@ class Data_gen(metaclass=ABCMeta):
         features = torch.cartesian_prod(*choices)
         datas = self._feature2data(features)
         return datas
+    
+    def norm(self, x_sample):
+        data_range = self.get_range('data')
+        l, u = data_range[0], data_range[1]
+        return (x_sample - l) / (u - l)
+    
+    def recover(self, x_sample):
+        data_range = self.get_range('data')
+        l, u = data_range[0], data_range[1]
+        return (u - l)*x_sample + l

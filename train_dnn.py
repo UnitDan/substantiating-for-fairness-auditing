@@ -36,10 +36,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default='adult', choices=['adult', 'german', 'bank'])
     parser.add_argument('--model', type=str, default='MLP', choices=['MLP', 'NormMLP'])
+    parser.add_argument('--epoch', type=int, default=10)
     parser.add_argument('--use_all_features', action='store_true')
     parser.add_argument('--protected_vars', nargs='*')
     parser.add_argument('--trainer', type=str, default='STDTrainer', choices=['STDTrainer'])
     parser.add_argument('--repeat', type=int, default=3)
+    parser.add_argument('--remark', type=str, default='')
     args = parser.parse_args()
 
     for i in range(args.repeat):
@@ -62,9 +64,9 @@ if __name__ == '__main__':
         elif args.model == 'NormMLP':
             data_range = data_gen.get_range('data')
             model = NormMLP(input_size=feature_dim, output_size=output_dim, data_range=data_range)
-        trainer = trainer_name(model, train_dl, test_dl, device='cuda:1', epochs=10, lr=1e-3)
+        trainer = trainer_name(model, train_dl, test_dl, device='cuda:1', epochs=args.epoch, lr=1e-3)
         trainer.train()
 
         save_dir = 'models_to_test'
-        file_name = f'{args.model}_{args.data}_{args.trainer}_{"all-features" if args.use_all_features else "without-"+"-".join(args.protected_vars)}_{i}.pth'
+        file_name = f'{args.model}_{args.data}_{args.trainer}_{"all-features" if args.use_all_features else "without-"+"-".join(args.protected_vars)}_{i}{args.remark}.pth'
         model.save(os.path.join(save_dir, file_name))
