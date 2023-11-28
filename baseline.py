@@ -1,6 +1,6 @@
 import torch
 import random
-from seeker import Random_select_seeker, Random_gen_seeker, White_seeker, Black_seeker
+from Unfairness_prove.old_seeker import Random_select_seeker, Random_gen_seeker, White_seeker, Black_seeker, Norm_Test_seeker
 from utils import Unfair_metric, load_model
 from data import adult
 from train_dnn import get_data
@@ -37,7 +37,7 @@ class Logger:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seeker', type=str, \
-                        choices=['dx_select', 'select', 'distribution', 'range', 'white', 'black'])
+                        choices=['dx_select', 'select', 'distribution', 'range', 'white', 'black', 'test_white', 'test_black'])
     parser.add_argument('--protected_vars', nargs='*')
     parser.add_argument('--dnn_model_id', type=int, choices=[0, 1, 2], default=0)
     parser.add_argument('--dx', type=str, choices=['SE', 'Causal', 'LR'], default='Causal')
@@ -138,6 +138,22 @@ if __name__ == '__main__':
         seeker = Black_seeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
         for _ in range(args.repeat):
             pair, n_query = seeker.seek(max_query=args.max_query)
+            if pair != None:
+                logger.log(1, n_query, pair.int().tolist())
+            else:
+                logger.log(0, n_query, None)
+    elif args.seeker == 'test_white':
+        seeker = Norm_Test_seeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
+        for _ in range(args.repeat):
+            pair, n_query = seeker.seek(black_box=False, origin_lr1=1, max_query=args.max_query)
+            if pair != None:
+                logger.log(1, n_query, pair.int().tolist())
+            else:
+                logger.log(0, n_query, None)
+    elif args.seeker == 'test_black':
+        seeker = Norm_Test_seeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
+        for _ in range(args.repeat):
+            pair, n_query = seeker.seek(black_box=True, origin_lr1=1, max_query=args.max_query)
             if pair != None:
                 logger.log(1, n_query, pair.int().tolist())
             else:
