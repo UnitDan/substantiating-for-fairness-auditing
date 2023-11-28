@@ -26,12 +26,13 @@ class MahalanobisDistances(Distance):
         self.max = self.max.to(self.device)
         self.min = self.min.to(self.device)
 
-    def fit(self, sigma, data_gen):
+    def fit(self, num_dims: int, sigma, data_gen):
         self.sigma = sigma
 
         data_range = data_gen.get_range('data')
         self.max = data_range[1]
         self.min = data_range[0]
+        self.num_dims = num_dims
 
     def __compute_dist__(self, X1, X2):
         """Computes the distance between two data samples x1 and x2
@@ -87,7 +88,7 @@ class MahalanobisDistances(Distance):
             itemwise_dist: bool, default: True
                 Compute the distance in an itemwise manner or pairwise manner.
 
-                In the itemwise fashion (`itemwise_dist=False`), distance is
+                In the itemwise fashion (`itemwise_dist=True`), distance is
                 computed between the ith data sample in X1 to the ith data sample
                 in X2. Thus, the two data samples X1 and X2 should be of the same shape
 
@@ -143,17 +144,22 @@ class MahalanobisDistances(Distance):
 
         return scaling_factor*Delta - (scaling_factor-1)*self.min
 
-
+    def sensitiveness(self):
+        x = torch.zeros(self.num_dims)
+        purt = torch.diag(self.max - self.min)
+        # purt = torch.diag(torch.ones_like(x))
+        g = torch.zeros_like(x)
+        for i in range(g.shape[0]):
+            g[i] = self.forward(x, x+purt[i])
+        g = g / torch.max(g)
+        return g
+    
 class SquaredEuclideanDistance(MahalanobisDistances):
     """
     computes the max-min normalized squared euclidean distance where
 
     .. math:: \\Sigma= I_{num_dims}
     """
-
-    def __init__(self):
-        super().__init__()
-        self.num_dims_ = None
 
     def fit(self, num_dims: int, data_gen):
         """Fit Square Euclidean Distance metric
@@ -163,10 +169,8 @@ class SquaredEuclideanDistance(MahalanobisDistances):
             num_dims: int
                 the number of dimensions of the space in which the Squared Euclidean distance will be used.
         """
-
-        self.num_dims_ = num_dims
-        sigma = torch.eye(self.num_dims_).detach()
-        super().fit(sigma, data_gen)
+        sigma = torch.eye(num_dims).detach()
+        super().fit(num_dims, sigma, data_gen)
 
 
 class ProtectedSEDistances(SquaredEuclideanDistance):

@@ -1,7 +1,7 @@
 import torch
 from distances.normalized_mahalanobis_distances import MahalanobisDistances
 from typing import Iterable
-from data.data_utils import Data_gen
+from data.data_utils import DataGenerator
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 
@@ -20,7 +20,7 @@ class SensitiveSubspaceDistance(MahalanobisDistances):
     def __init__(self):
         super().__init__()
 
-    def fit(self, basis_vectors, data_gen):
+    def fit(self, basis_vectors, data_gen: DataGenerator):
         """Fit Sensitive Subspace Distance metric
 
         Parameters
@@ -30,7 +30,8 @@ class SensitiveSubspaceDistance(MahalanobisDistances):
         """
 
         sigma = self.compute_projection_complement(basis_vectors)
-        super().fit(sigma, data_gen)
+        num_dims = sigma.shape[0]
+        super().fit(num_dims, sigma, data_gen)
 
     def compute_projection_complement(self, basis_vectors):
         """Compute the projection complement of the space
@@ -109,7 +110,7 @@ class LogisticRegSensitiveSubspace(SensitiveSubspaceDistance):
     def fit(
         self,
         data_X: torch.Tensor,
-        data_gen: Data_gen,
+        data_gen: DataGenerator,
         data_SensitiveAttrs: torch.Tensor = None,
         protected_idxs: Iterable[int] = None,
         keep_protected_idxs: bool = True,

@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader, Dataset
 from abc import ABCMeta, abstractmethod
 import numpy as np
 import random
-from utils import Unfair_metric
+from utils import UnfairMetric
 
 class ProtectedDataset(Dataset):
     def __init__(self, data, labels, protected_idxs):
@@ -62,7 +62,7 @@ def idx_to_onehot(idx, n_choice):
     x[[i, j]] = 1
     return x
 
-class Data_gen(metaclass=ABCMeta):
+class DataGenerator(metaclass=ABCMeta):
     def __init__(self, include_protected_feature):
         self.include_protected_feature = include_protected_feature
 
@@ -117,14 +117,6 @@ class Data_gen(metaclass=ABCMeta):
 
         return data
 
-    # def clip(self, data, with_protected_feature=None):
-    #     '''
-    #     将数据裁剪到限制范围
-    #     数值类型变量，直接裁剪
-    #     onehot向量,等比例放缩,使得
-    #     '''
-    #     pass
-
     def clip(self, data, with_protected_feature=None):
         if with_protected_feature is None:
             with_protected_feature = self.include_protected_feature
@@ -146,14 +138,42 @@ class Data_gen(metaclass=ABCMeta):
         data_range = self.get_range('data')
         continuous_low, continuous_high = data_range[0][self.continuous_columns], data_range[1][self.continuous_columns]
         data[:, self.continuous_columns] = data[:, self.continuous_columns].clip(continuous_low, continuous_high)
-        data = torch.round(data)
+        # 不取整，其他一致
 
         if not with_protected_feature:
             data = data[:, self.columns_to_keep]
 
         return data
+        
+    # def clip(self, data, with_protected_feature=None):
+    #     if with_protected_feature is None:
+    #         with_protected_feature = self.include_protected_feature
+    #     def _onehot(data):
+    #         o = torch.zeros_like(data)
+    #         o[torch.arange(data.shape[0]), torch.argmax(data, dim=1)] = 1
+    #         return o
+        
+    #     if len(data.shape) == 1:
+    #         data = data.unsqueeze(0)
+        
+    #     if not with_protected_feature:
+    #         x = torch.zeros((data.shape[0], data.shape[1] + len(self.sensitive_columns)))
+    #         x[:, self.columns_to_keep] = data
+    #         data = x
+        
+    #     for r in self.onehot_ranges:
+    #         data[:, r[0]: r[1]] = _onehot(data[:, r[0]: r[1]])
+    #     data_range = self.get_range('data')
+    #     continuous_low, continuous_high = data_range[0][self.continuous_columns], data_range[1][self.continuous_columns]
+    #     data[:, self.continuous_columns] = data[:, self.continuous_columns].clip(continuous_low, continuous_high)
+    #     data = torch.round(data)
+
+    #     if not with_protected_feature:
+    #         data = data[:, self.columns_to_keep]
+
+    #     return data
     
-    def all_possible_perturb_step(self, data_sample, unfair_metric:Unfair_metric):
+    def all_possible_perturb_step(self, data_sample, unfair_metric:UnfairMetric):
         data_sample = data_sample.squeeze()
         
         if not self.include_protected_feature:
@@ -186,7 +206,7 @@ class Data_gen(metaclass=ABCMeta):
 
         return pert_data
 
-    def random_perturb(self, data_sample, unfair_metric:Unfair_metric):
+    def random_perturb(self, data_sample, unfair_metric:UnfairMetric):
         searched = torch.Tensor()
         while 1:
             step_pert = self.all_possible_perturb_step(data_sample, unfair_metric)

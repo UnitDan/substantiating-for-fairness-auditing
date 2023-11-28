@@ -70,7 +70,3 @@ class Distance(nn.Module, metaclass=ABCMeta):
             right[goal-l < 1e-5] = mid
 
         return mid*Delta
-
-
-
-

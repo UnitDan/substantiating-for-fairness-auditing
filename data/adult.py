@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import torch
-from data.data_utils import convert_df_to_tensor, onehot_to_idx, idx_to_onehot, Data_gen
+from data.data_utils import convert_df_to_tensor, onehot_to_idx, idx_to_onehot, DataGenerator
 import random
 from sklearn.preprocessing import StandardScaler
 
@@ -153,7 +153,7 @@ def _get_input_output_df_(data):
     return df_X, df_Y
 
 
-class Adult_gen(Data_gen):
+class Generator(DataGenerator):
     def __init__(self, sensitive_columns, include_protected_feature) -> None:
         self.X, self.y, self.protected_idx = load_data()
 
