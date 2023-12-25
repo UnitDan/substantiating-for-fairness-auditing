@@ -146,11 +146,11 @@ class MahalanobisDistances(Distance):
 
     def sensitiveness(self):
         x = torch.zeros(self.num_dims)
-        purt = torch.diag(self.max - self.min)
-        # purt = torch.diag(torch.ones_like(x))
+        pert = torch.diag(self.max - self.min)
+        # pert = torch.diag(torch.ones_like(x))
         g = torch.zeros_like(x)
         for i in range(g.shape[0]):
-            g[i] = self.forward(x, x+purt[i])
+            g[i] = self.forward(x, x+pert[i])
         g = g / torch.max(g)
         return g
     

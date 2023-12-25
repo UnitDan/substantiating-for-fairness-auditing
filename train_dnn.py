@@ -4,8 +4,8 @@ import torch
 import argparse
 import random
 from torch.utils.data import DataLoader, SubsetRandomSampler
-from dnn_models.trainer import STDTrainer
-from dnn_models.model import MLP, NormMLP
+from models.trainer import STDTrainer, RandomForestTrainer
+from models.model import MLP, RandomForest
 import os
 
 
@@ -35,11 +35,11 @@ def get_data(data, rand_seed, protected_vars):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default='adult', choices=['adult', 'german', 'bank'])
-    parser.add_argument('--model', type=str, default='MLP', choices=['MLP', 'NormMLP'])
+    parser.add_argument('--model', type=str, default='MLP', choices=['MLP', 'RandomForest'])
     parser.add_argument('--epoch', type=int, default=10)
     parser.add_argument('--use_all_features', action='store_true')
     parser.add_argument('--protected_vars', nargs='*')
-    parser.add_argument('--trainer', type=str, default='STDTrainer', choices=['STDTrainer'])
+    parser.add_argument('--trainer', type=str, default='STDTrainer', choices=['STDTrainer', 'RandomForestTrainer'])
     parser.add_argument('--repeat', type=int, default=3)
     parser.add_argument('--remark', type=str, default='')
     args = parser.parse_args()
@@ -56,17 +56,19 @@ if __name__ == '__main__':
         feature_dim = dataset.dim_feature()
         output_dim = 2
 
-        if args.data == 'adult':
-            data_gen = adult.Adult_gen(dataset.protected_idxs, args.use_all_features)
+        # data_gen = data.Generator(dataset.protected_idxs, args.use_all_features)
 
         if args.model == 'MLP':
             model = MLP(input_size=feature_dim, output_size=output_dim)
-        elif args.model == 'NormMLP':
-            data_range = data_gen.get_range('data')
-            model = NormMLP(input_size=feature_dim, output_size=output_dim, data_range=data_range)
-        trainer = trainer_name(model, train_dl, test_dl, device='cuda:1', epochs=args.epoch, lr=1e-3)
+        elif args.model == 'RandomForest':
+            model = RandomForest(max_depth=10)
+
+        if args.trainer == 'STDTrainer':
+            trainer = STDTrainer(model, train_dl, test_dl, device='cuda:1', epochs=args.epoch, lr=1e-3)
+        elif args.trainer == 'RandomForestTrainer':
+            trainer = RandomForestTrainer(model, train_dl, test_dl)
         trainer.train()
 
         save_dir = 'models_to_test'
-        file_name = f'{args.model}_{args.data}_{args.trainer}_{"all-features" if args.use_all_features else "without-"+"-".join(args.protected_vars)}_{i}{args.remark}.pth'
+        file_name = f'{args.model}_{args.data}_{args.trainer}_{"all-features" if args.use_all_features else "without-"+"-".join(args.protected_vars)}_{i}{args.remark}'
         model.save(os.path.join(save_dir, file_name))

@@ -1,10 +1,12 @@
 import torch
 import random
-from Unfairness_prove.old_seeker import Random_select_seeker, Random_gen_seeker, White_seeker, Black_seeker, Norm_Test_seeker
-from utils import Unfair_metric, load_model
+# from Unfairness_prove.old_seeker import Random_select_seeker, Random_gen_seeker, White_seeker, Black_seeker, Norm_Test_seeker
+from seeker.random import RandomSelectSeeker, RangeGenSeeker, DistributionGenSeeker
+from seeker.gradiant_based import BlackboxSeeker, WhiteboxSeeker, FoolSeeker
+from utils import UnfairMetric, load_model
 from data import adult
 from train_dnn import get_data
-from dnn_models.model import MLP
+from models.model import MLP, RandomForest
 from distances.normalized_mahalanobis_distances import SquaredEuclideanDistance, ProtectedSEDistances
 from distances.sensitive_subspace_distances import LogisticRegSensitiveSubspace
 from distances.binary_distances import BinaryDistance
@@ -37,8 +39,9 @@ class Logger:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seeker', type=str, \
-                        choices=['dx_select', 'select', 'distribution', 'range', 'white', 'black', 'test_white', 'test_black'])
+                        choices=['select', 'distribution', 'range', 'white', 'black', 'fool'])
     parser.add_argument('--protected_vars', nargs='*')
+    parser.add_argument('--model', type=str, choices=['MLP', 'RandomForest'], default='MLP')
     parser.add_argument('--dnn_model_id', type=int, choices=[0, 1, 2], default=0)
     parser.add_argument('--dx', type=str, choices=['SE', 'Causal', 'LR'], default='Causal')
     parser.add_argument('--epsilon', type=float)
@@ -57,15 +60,20 @@ if __name__ == '__main__':
     in_dim = dataset.dim_feature()
     out_dim = 2
 
-    model = MLP(in_dim, out_dim)
-    load_model(model, 'MLP', 'adult', 'STDTrainer', use_protected_attr=use_protected_attr,\
-               protected_vars=args.protected_vars, id=rand_seed)
+    if args.model == 'MLP':
+        model = MLP(in_dim, out_dim)
+        load_model(model, 'MLP', 'adult', 'STDTrainer', use_protected_attr=use_protected_attr,\
+                protected_vars=args.protected_vars, id=rand_seed)
+    elif args.model == 'RandomForest':
+        model = RandomForest()
+        load_model(model, 'RandomForest', 'adult', 'RandomForestTrainer', use_protected_attr=use_protected_attr, \
+                protected_vars=args.protected_vars, id=rand_seed)
 
     # prepare data
     all_X, all_y = dataset.data, dataset.labels
     all_pred = model.get_prediction(all_X)
 
-    adult_gen = adult.Adult_gen(sensitive_columns=dataset.protected_idxs, \
+    adult_gen = adult.Generator(sensitive_columns=dataset.protected_idxs, \
                                 include_protected_feature=use_protected_attr)
 
     print('preparing distances...')
@@ -85,7 +93,7 @@ if __name__ == '__main__':
         distance_x.fit(all_X, adult_gen, protected_idxs=dataset.protected_idxs)
         # epsilon = 1e10
     epsilon = args.epsilon
-    unfair_metric = Unfair_metric(dx=distance_x, dy=distance_y, epsilon=epsilon)
+    unfair_metric = UnfairMetric(dx=distance_x, dy=distance_y, epsilon=epsilon)
 
     log_path = f'log/{args.log_path}.log'
     logger = Logger(log_path)
@@ -94,66 +102,50 @@ if __name__ == '__main__':
     print('start')
     random.seed(422)
     torch.manual_seed(422)
-    if args.seeker == 'dx_select':
-        seeker = Random_select_seeker(model=model, unfair_metric=unfair_metric, data=all_X)
+    if args.seeker == 'select':
+        seeker = RandomSelectSeeker(model=model, unfair_metric=unfair_metric, data=all_X, data_gen=adult_gen)
         for _ in range(args.repeat):
-            pair, n_query = seeker.seek(dx_constraint=True, max_query=args.max_query)
-            if pair != None:
-                logger.log(1, n_query, pair.int().tolist())
-            else:
-                logger.log(0, n_query, None)
-    elif args.seeker == 'select':
-        seeker = Random_select_seeker(model=model, unfair_metric=unfair_metric, data=all_X)
-        for _ in range(args.repeat):
-            pair, n_query = seeker.seek(dx_constraint=False, max_query=args.max_query)
+            pair, n_query = seeker.seek(max_query=args.max_query)
             if pair != None:
                 logger.log(1, n_query, pair.int().tolist())
             else:
                 logger.log(0, n_query, None)
     elif args.seeker == 'distribution':
-        seeker = Random_gen_seeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
+        seeker = DistributionGenSeeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
         for _ in range(args.repeat):
-            pair, n_query = seeker.seek(by_range=False, max_query=args.max_query)
+            pair, n_query = seeker.seek(max_query=args.max_query)
             if pair != None:
                 logger.log(1, n_query, pair.int().tolist())
             else:
                 logger.log(0, n_query, None)
     elif args.seeker == 'range':
-        seeker = Random_gen_seeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
+        seeker = RangeGenSeeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
         for _ in range(args.repeat):
-            pair, n_query = seeker.seek(by_range=True, max_query=args.max_query)
+            pair, n_query = seeker.seek(max_query=args.max_query)
             if pair != None:
                 logger.log(1, n_query, pair.int().tolist())
             else:
                 logger.log(0, n_query, None)
     elif args.seeker == 'white':
-        seeker = White_seeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
+        seeker = WhiteboxSeeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
         for _ in range(args.repeat):
-            pair, n_query = seeker.seek(max_query=args.max_query)
+            pair, n_query = seeker.seek(lamb=1, origin_lr=0.1, max_query=args.max_query)
             if pair != None:
                 logger.log(1, n_query, pair.int().tolist())
             else:
                 logger.log(0, n_query, None)
     elif args.seeker == 'black':
-        seeker = Black_seeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
+        seeker = BlackboxSeeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen, easy=False)
         for _ in range(args.repeat):
-            pair, n_query = seeker.seek(max_query=args.max_query)
+            pair, n_query = seeker.seek(lamb=1, origin_lr=0.1, max_query=args.max_query)
             if pair != None:
                 logger.log(1, n_query, pair.int().tolist())
             else:
                 logger.log(0, n_query, None)
-    elif args.seeker == 'test_white':
-        seeker = Norm_Test_seeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
+    elif args.seeker == 'fool':
+        seeker = FoolSeeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
         for _ in range(args.repeat):
-            pair, n_query = seeker.seek(black_box=False, origin_lr1=1, max_query=args.max_query)
-            if pair != None:
-                logger.log(1, n_query, pair.int().tolist())
-            else:
-                logger.log(0, n_query, None)
-    elif args.seeker == 'test_black':
-        seeker = Norm_Test_seeker(model=model, unfair_metric=unfair_metric, data_gen=adult_gen)
-        for _ in range(args.repeat):
-            pair, n_query = seeker.seek(black_box=True, origin_lr1=1, max_query=args.max_query)
+            pair, n_query = seeker.seek(lamb=1, origin_lr=0.1, max_query=args.max_query)
             if pair != None:
                 logger.log(1, n_query, pair.int().tolist())
             else:

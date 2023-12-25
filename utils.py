@@ -5,7 +5,7 @@ from tqdm.auto import tqdm
 
 def load_model(model, model_name, dataset_name, trainer_name, use_protected_attr, protected_vars, id, remark=''):
     root_dir = 'models_to_test'
-    file_name = f'{model_name}_{dataset_name}_{trainer_name}_{"all-features" if use_protected_attr else "without-"+"-".join(protected_vars)}_{id}{remark}.pth'
+    file_name = f'{model_name}_{dataset_name}_{trainer_name}_{"all-features" if use_protected_attr else "without-"+"-".join(protected_vars)}_{id}{remark}'
     model.load(os.path.join(root_dir, file_name))
 
 class UnfairMetric():

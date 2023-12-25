@@ -118,9 +118,9 @@ class Random_gen_gradiant_seeker(Seeker):
         else:
             g = torch.zeros_like(x).squeeze()
             for i in range(g.shape[0]):
-                purt = torch.zeros_like(x).squeeze()
-                purt[i] = 1
-                g[i] = (self.loss(x + purt) - self.loss(x - purt))/2
+                pert = torch.zeros_like(x).squeeze()
+                pert[i] = 1
+                g[i] = (self.loss(x + pert) - self.loss(x - pert))/2
             self.cur_x0 = x.clone()
             self.cur_gradient = g
 
@@ -169,15 +169,15 @@ class White_seeker(Seeker):
     def _probability_by_dx(self, x):
         '''
         return the probability of choosing a idx i according to dx.
-        p[i] = 1/(1+exp(dx(x+purt_i, x-purt_i)))
+        p[i] = 1/(1+exp(dx(x+_i, x-_i)))
         '''
         x = x.squeeze()
         dx = self.unfair_metric.dx
         g = torch.zeros_like(x)
         for i in range(g.shape[0]):
-            purt = torch.zeros_like(x)
-            purt[i] = 1
-            g[i] = -dx(x+purt, x-purt)
+            pert = torch.zeros_like(x)
+            pert[i] = 1
+            g[i] = -dx(x+pert, x-pert)
         return torch.sigmoid(g)
 
     def loss(self, x):
@@ -331,9 +331,9 @@ class Black_seeker(Seeker):
             # print('calculate gradient')
             g = torch.zeros_like(x).squeeze()
             for i in range(g.shape[0]):
-                purt = torch.zeros_like(x).squeeze()
-                purt[i] = 1
-                g[i] = (self.loss(x + purt) - self.loss(x - purt))/2
+                pert = torch.zeros_like(x).squeeze()
+                pert[i] = 1
+                g[i] = (self.loss(x + pert) - self.loss(x - pert))/2
             self.cur_x0 = x.clone()
             self.cur_gradient = g
         return torch.round(self.data_gen.clip(x-lr*g))
@@ -345,9 +345,9 @@ class Black_seeker(Seeker):
         else:
             g = torch.zeros_like(x).squeeze()
             for i in range(g.shape[0]):
-                purt = torch.zeros_like(x).squeeze()
-                purt[i] = 1
-                g[i] = (self.loss(x + purt) - self.loss(x - purt))/2
+                pert = torch.zeros_like(x).squeeze()
+                pert[i] = 1
+                g[i] = (self.loss(x + pert) - self.loss(x - pert))/2
             self.cur_x0 = x.clone()
             self.cur_gradient = g
         g_direction = g/torch.abs(g)
@@ -449,9 +449,9 @@ class Test_seeker(Seeker):
         
         g = torch.zeros_like(x).squeeze()
         for i in range(g.shape[0]):
-            purt = torch.zeros_like(x).squeeze()
-            purt[i] = 1
-            g[i] = torch.sign(loss(x + purt) - loss(x - purt))
+            pert = torch.zeros_like(x).squeeze()
+            pert[i] = 1
+            g[i] = torch.sign(loss(x + pert) - loss(x - pert))
         return g
 
     def loss1(self, x, delta, lamb):
@@ -502,14 +502,14 @@ class Test_seeker(Seeker):
     def step1_black(self, x, delta, lr, lamb):
         g = torch.zeros_like(x).squeeze()
         for i in range(g.shape[0]):
-            purt = torch.zeros_like(x).squeeze()
-            # purt[i] = self.scale[i]
-            purt[i] = 1
-            purt_delta = [delta + purt, delta - purt]
+            pert = torch.zeros_like(x).squeeze()
+            # pert[i] = self.scale[i]
+            pert[i] = 1
+            pert_delta = [delta + pert, delta - pert]
             # v1: 限制相对于x0的总变化量，应当尽量少在敏感属性上发生变化
-            g[i] = (self.loss1(x+purt_delta[0], purt_delta[0], lamb) - self.loss1(x+purt_delta[1], purt_delta[1]))/2
+            g[i] = (self.loss1(x+pert_delta[0], pert_delta[0], lamb) - self.loss1(x+pert_delta[1], pert_delta[1]))/2
             # v2：限制当前单步的变化量，应当尽量少在敏感属性上发生变化
-            # g[i] = (self.loss1(x+purt_delta[0], purt, lamb) - self.loss1(x+purt_delta[1], -purt))/2
+            # g[i] = (self.loss1(x+pert_delta[0], pert, lamb) - self.loss1(x+pert_delta[1], -pert))/2
         
         # 两种scale-norm的方式
         new_delta = delta - lr*self.scale*g
@@ -556,9 +556,9 @@ class Test_seeker(Seeker):
         else:
             g = torch.zeros_like(x).squeeze()
             for i in range(g.shape[0]):
-                purt = torch.zeros_like(x).squeeze()
-                purt[i] = 1
-                g[i] = (self.loss(x + purt) - self.loss(x - purt))/2
+                pert = torch.zeros_like(x).squeeze()
+                pert[i] = 1
+                g[i] = (self.loss(x + pert) - self.loss(x - pert))/2
             self.cur_x0 = x.clone()
             self.cur_gradient = g
         g_direction = g/torch.abs(g)
@@ -726,13 +726,13 @@ class Norm_Test_seeker(Test_seeker):
         else:
             g = torch.zeros_like(x).squeeze()
             for i in range(g.shape[0]):
-                purt = torch.zeros_like(x).squeeze()
-                purt[i] = 1e-3
-                purt_delta = [delta + purt, delta - purt]
+                pert = torch.zeros_like(x).squeeze()
+                pert[i] = 1e-3
+                pert_delta = [delta + pert, delta - pert]
                 # v1: 限制相对于x0的总变化量，应当尽量少在敏感属性上发生变化
-                g[i] = (self.loss1(x+purt_delta[0], purt_delta[0], lamb) - self.loss1(x+purt_delta[1], purt_delta[1], lamb))/2
+                g[i] = (self.loss1(x+pert_delta[0], pert_delta[0], lamb) - self.loss1(x+pert_delta[1], pert_delta[1], lamb))/2
                 # v2：限制当前单步的变化量，应当尽量少在敏感属性上发生变化
-                # g[i] = (self.loss1(x+purt_delta[0], purt, lamb) - self.loss1(x+purt_delta[1], -purt))/2
+                # g[i] = (self.loss1(x+pert_delta[0], pert, lamb) - self.loss1(x+pert_delta[1], -pert))/2
             self.cur_x0 = delta.clone()
             self.cur_gradient = g.clone()
         
@@ -778,9 +778,9 @@ class Norm_Test_seeker(Test_seeker):
         else:
             g = torch.zeros_like(x).squeeze()
             for i in range(g.shape[0]):
-                purt = torch.zeros_like(x).squeeze()
-                purt[i] = 1
-                g[i] = (self.loss(x + purt) - self.loss(x - purt))/2
+                pert = torch.zeros_like(x).squeeze()
+                pert[i] = 1
+                g[i] = (self.loss(x + pert) - self.loss(x - pert))/2
             self.cur_x0 = x.clone()
             self.cur_gradient = g
 
