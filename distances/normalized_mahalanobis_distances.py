@@ -23,15 +23,13 @@ class MahalanobisDistances(Distance):
 
         self.device = device
         self.sigma = self.sigma.to(self.device)
-        self.max = self.max.to(self.device)
-        self.min = self.min.to(self.device)
 
     def fit(self, num_dims: int, sigma, data_gen):
         self.sigma = sigma
 
         data_range = data_gen.get_range('data')
-        self.max = data_range[1]
-        self.min = data_range[0]
+        self.max = data_range[1].to(self.device)
+        self.min = data_range[0].to(self.device)
         self.num_dims = num_dims
 
     def __compute_dist__(self, X1, X2):
@@ -175,25 +173,25 @@ class SquaredEuclideanDistance(MahalanobisDistances):
 
 class ProtectedSEDistances(SquaredEuclideanDistance):
     '''Compute the Protected Squared Euclidean Distance metric which is similar to Squared Euclidean Distance
-     while ignore the protected attributes while computing distance between data points.
+     while ignore the sensitive attributes while computing distance between data points.
     '''
     def __init__(self):
         super().__init__()
-        self._protected_attributes = None
+        self._sensitive_attributes = None
 
-    def fit(self, protected_idx, num_dims:int, data_gen):
+    def fit(self, sensitive_idx, num_dims:int, data_gen):
         """Fit Causal Distance metric
 
         Parameters
         ------------
-            protected_attributes: Iterable[int]
-                List of attribute indices considered to be protected.
+            sensitive_attributes: Iterable[int]
+                List of attribute indices considered to be sensitive.
                 The metric would ignore these attributes while
                 computing distance between data points.
             num_dims: int
                 Total number of attributes in the data points.
         """
         super().fit(num_dims, data_gen)
-        self._protected_attributes = protected_idx
-        for p in self._protected_attributes:
+        self._sensitive_attributes = sensitive_idx
+        for p in self._sensitive_attributes:
             self.sigma[p][p] = 0

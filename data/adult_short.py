@@ -47,9 +47,11 @@ def _data_preprocess_(rootdir=None):
     # remove rows with NaNs
     data.dropna(inplace=True)
 
+    data.drop(['relationship', 'occupation'], axis=1, inplace=True)
+
     categorical_vars = [
-        'workclass', 'marital-status', 'occupation', 
-        'relationship', 'race', 'sex', 'native-country'
+        'marital-status', 'workclass', 
+        'race', 'sex', 'native-country'
     ]
 
     data = pd.get_dummies(data, columns=categorical_vars)
@@ -114,15 +116,13 @@ class Generator(DataGenerator):
     def __init__(self, include_sensitive_feature, sensitive_vars, device) -> None:
         self.X, self.y, self.sensitive_idx = load_data(sensitive_vars)
 
-        self.continuous_columns = [0, 1, 2, 3, 4, 26, 33]
+        self.continuous_columns = [0, 1, 2, 3, 4, 12, 13]
         self.onehot_ranges = [
             [5, 12],
-            [12, 26],
-            [27, 33],
-            [34, 41]
+            [14, 21]
         ]
         self.feature_name = ['age', 'capital-gain', 'capital-loss', 'education-num',
-       'hours-per-week', 'race_White', 'sex_Male', 'marital-status', 'occupation', 'relationship', 'workclass']
+       'hours-per-week', 'race_White', 'sex_Male', 'marital-status', 'workclass']
 
         super().__init__(include_sensitive_feature, device)
 
@@ -137,31 +137,7 @@ class Generator(DataGenerator):
             5: 'Separated',
             6: 'Widowed'
         })
-        df['occupation'] = df['occupation'].replace({
-            0: 'Adm-clerical',
-            1: 'Armed-Forces',
-            2: 'Craft-repair',
-            3: 'Exec-managerial',
-            4: 'Farming-fishing',
-            5: 'Handlers-cleaners',
-            6: 'Machine-op-inspct',
-            7: 'Other-service',
-            8: 'Priv-house-serv',
-            9: 'Prof-specialty',
-            10: 'Protective-serv',
-            11: 'Sales',
-            12: 'Tech-support',
-            13: 'Transport-moving'
-        })
         df['race'] = df['race_White'].apply(lambda x: 'Others' if x < 0.5 else 'White')
-        df['relationship'] = df['relationship'].replace({
-            0: 'Husband',
-            1: 'Not-in-family',
-            2: 'Other-relative',
-            3: 'Own-child',
-            4: 'Unmarried',
-            5: 'Wife'
-        })
         df['sex'] = df['sex_Male'].apply(lambda x: 'Female' if x < 0.5 else 'Male')
         df['workclass'] = df['workclass'].replace({
             0 : 'Federal-gov',
@@ -172,8 +148,10 @@ class Generator(DataGenerator):
             5 : 'State-gov',
             6 : 'Without-pay'
         })
+        # json = df[['age', 'capital-gain', 'capital-loss', 'education-num',
+        # 'hours-per-week', 'race', 'sex', 'marital-status', 'occupation', 'relationship', 'workclass']].iloc[0].to_dict()
         json = df[['age', 'capital-gain', 'capital-loss', 'education-num',
-        'hours-per-week', 'race', 'sex', 'marital-status', 'occupation', 'relationship', 'workclass']].iloc[0].to_dict()
+        'hours-per-week', 'race', 'sex', 'marital-status', 'workclass']].iloc[0].to_dict()
         features = []
         for k, v in json.items():
             features.append(f'{k} is {int(v) if isinstance(v, float) else v}')

@@ -69,32 +69,31 @@ def _get_input_output_df_(data):
     
     return df_X, df_Y
 
-def load_data(protected_vars=None):
-    if protected_vars == None:
-        protected_vars = ['race_African-American', 'sex_Male']
+def load_data(sensitive_vars=None):
+    if sensitive_vars == None:
+        sensitive_vars = ['race_African-American', 'sex_Male']
 
     df_X, df_Y = _data_preprocess_()
-    protected_idx = [df_X.columns.get_loc(x) for x in protected_vars]
+    sensitive_idx = [df_X.columns.get_loc(x) for x in sensitive_vars]
     for i, c in enumerate(df_X.columns):
         print(i, c)
 
     X, y = convert_df_to_tensor(df_X, df_Y)
 
-    return X, y, protected_idx
+    return X, y, sensitive_idx
 
 class Generator(DataGenerator):
-    def __init__(self, sensitive_columns, include_protected_feature) -> None:
-        self.X, self.y, self.protected_idx = load_data()
+    def __init__(self, include_sensitive_feature, sensitive_vars, device) -> None:
+        self.X, self.y, self.sensitive_idx = load_data(sensitive_vars)
 
         self.continuous_columns = [5, 6, 7, 8, 9, 10, 11]
         self.onehot_ranges = [
             [0, 3],
             [3, 5],
         ]
-        self.include_protected_feature = include_protected_feature
         self.feature_name = ['juv_fel_count', 'juv_misd_count', 'juv_other_count', 'priors_count', 'race_Black', 'score_text', 'sex_Male', 'age_catagory', 'crime_charge_degree']
 
-        super()._initialize(sensitive_columns=sensitive_columns)
+        super().__init__(include_sensitive_feature, device)
 
 __all__ = [
     'load_data',

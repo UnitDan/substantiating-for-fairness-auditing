@@ -113,9 +113,9 @@ class BinaryDistance(Distance):
 class CausalDistance(BinaryDistance):
     def __init__(self):
         super().__init__()
-        self.register_buffer('protected_vectors', torch.Tensor())
+        self.register_buffer('sensitive_vectors', torch.Tensor())
         self.num_dims = None
-        self._protected_attributes = None
+        self._sensitive_attributes = None
     
     def to(self, device):
         """Moves distance metric to a particular device
@@ -126,37 +126,37 @@ class CausalDistance(BinaryDistance):
         """
 
         assert (
-            self.protected_vector is not None and len(self.protected_vector.size()) != 0
+            self.sensitive_vector is not None and len(self.sensitive_vector.size()) != 0
         ), "Please fit the metric before moving parameters to device"
 
         self.device = device
-        self.protected_vector = self.protected_vector.to(self.device)
+        self.sensitive_vector = self.sensitive_vector.to(self.device)
 
-    def fit(self, protected_idx, num_dims):
+    def fit(self, sensitive_idx, num_dims):
         """Fit Causal Distance metric
 
         Parameters
         ------------
-            protected_attributes: Iterable[int]
-                List of attribute indices considered to be protected.
-                The metric would ignore these protected attributes while
+            sensitive_attributes: Iterable[int]
+                List of attribute indices considered to be sensitive.
+                The metric would ignore these sensitive attributes while
                 computing distance between data points.
             num_dims: int
                 Total number of attributes in the data points.
         """
 
-        self._protected_attributes = protected_idx
+        self._sensitive_attributes = sensitive_idx
         self.num_dims = num_dims
 
-        self.protected_vector = torch.ones(num_dims)
-        self.protected_vector[protected_idx] = 0.0
+        self.sensitive_vector = torch.ones(num_dims)
+        self.sensitive_vector[sensitive_idx] = 0.0
 
     def forward(self, X1, X2, itemwise_dist=True):
         """
         :param x, y: a B x D matrices
-        :return: B x 1 matrix with the protected distance camputed between x and y
+        :return: B x 1 matrix with the sensitive distance camputed between x and y
         """
-        protected_X1 = (X1 * self.protected_vector)
-        protected_X2 = (X2 * self.protected_vector)
+        sensitive_X1 = (X1 * self.sensitive_vector)
+        sensitive_X2 = (X2 * self.sensitive_vector)
 
-        super().forward(protected_X1, protected_X2, itemwise_dist)
+        super().forward(sensitive_X1, sensitive_X2, itemwise_dist)

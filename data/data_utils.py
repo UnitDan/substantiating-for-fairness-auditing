@@ -3,22 +3,21 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 import random
-from utils import UnfairMetric
 import pandas as pd
 
 class ProtectedDataset(Dataset):
-    def __init__(self, data, labels, protected_idxs):
+    def __init__(self, data, labels, sensitive_idxs):
         self.data = data
         self.labels = labels
-        self.use_protected_attr = False
-        self.protected_idxs = protected_idxs
-        self.columns_to_keep = [i for i in range(data.shape[1]) if i not in protected_idxs]
+        self.use_sensitive_attr = False
+        self.sensitive_idxs = sensitive_idxs
+        self.columns_to_keep = [i for i in range(data.shape[1]) if i not in sensitive_idxs]
     
     def __len__(self):
         return len(self.data)
     
     def __getitem__(self, index):
-        if not self.use_protected_attr:
+        if not self.use_sensitive_attr:
             data = self.data[index][self.columns_to_keep]
         else:
             data = self.data[index]
@@ -26,14 +25,14 @@ class ProtectedDataset(Dataset):
         return data, label
 
     def get_all_data(self):
-        if not self.use_protected_attr:
+        if not self.use_sensitive_attr:
             data = self.data[:, self.columns_to_keep]
         else:
             data = self.data
         return data
 
     def dim_feature(self):
-        if self.use_protected_attr:
+        if self.use_sensitive_attr:
             dim = self.data.shape[1]
         else:
             dim = len(self.columns_to_keep)
@@ -42,7 +41,7 @@ class ProtectedDataset(Dataset):
     
 def convert_df_to_tensor(data_X_df, data_Y_df):
     xx = data_X_df.values.astype(float)
-    data_X = torch.tensor(xx).float()
+    data_X = torch.Tensor(xx)
     data_Y = torch.tensor(data_Y_df.values)
 
     return data_X, data_Y
@@ -63,22 +62,25 @@ def idx_to_onehot(idx, n_choice):
     return x
 
 class DataGenerator():
-    def __init__(self, include_protected_feature):
-        self.include_protected_feature = include_protected_feature
-
-    def _initialize(self, sensitive_columns):
-        self.sensitive_columns = sensitive_columns
-        self.columns_to_keep = [i for i in range(self.X.shape[1]) if i not in self.sensitive_columns]
-        self.data_range = torch.quantile(self.X, torch.Tensor([0, 1]), dim=0)
+    def __init__(self, include_sensitive_feature, device):
+        self.include_sensitive_feature = include_sensitive_feature
+        self.columns_to_keep = [i for i in range(self.X.shape[1]) if i not in self.sensitive_idx]
+        self.data_range = torch.quantile(self.X, torch.Tensor([0, 1]), dim=0).to(device)
         
-        self.all_features = self._data2feature(self.X)
-        self.feature_range = torch.quantile(self.all_features, torch.Tensor([0, 1]), dim=0)
+        self.all_features = self._data2feature(self.X, with_sensitive_feature=True)
+        self.feature_range = torch.quantile(self.all_features, torch.Tensor([0, 1]), dim=0).to(device)
+        self.device = device
+    
+    def to(self, device):
+        self.data_range = self.data_range.to(device)
+        self.feature_range = self.feature_range.to(device)
+        self.device = device
 
-    def get_range(self, data_or_feature, include_protected_feature=None):
-        if include_protected_feature == None:
-            include_protected_feature = self.include_protected_feature
+    def get_range(self, data_or_feature, include_sensitive_feature=None):
+        if include_sensitive_feature == None:
+            include_sensitive_feature = self.include_sensitive_feature
         if data_or_feature == 'data':
-            if not include_protected_feature:
+            if not include_sensitive_feature:
                 return self.data_range[:, self.columns_to_keep]
             else:
                 return self.data_range
@@ -88,12 +90,12 @@ class DataGenerator():
     def gen_by_range(self, n=1):
         r = self.get_range('feature')
         l, u = r[0], r[1]
-        features = torch.rand((n, self.all_features.shape[1]))
+        features = torch.rand((n, self.all_features.shape[1])).to(self.device)
         features = torch.floor(l + features*(u - l + 1))
         # features = torch.floor(l + features*(u - l))
         data = self._feature2data(features)
 
-        if not self.include_protected_feature:
+        if not self.include_sensitive_feature:
             data = data[:, self.columns_to_keep]
 
         return data
@@ -105,16 +107,16 @@ class DataGenerator():
             x = self.all_features[idxs[i], torch.arange(self.all_features.shape[1])]
             data.append(x)
         data = torch.concat(data, dim=0)
-        data = self._feature2data(data)
+        data = self._feature2data(data).to(self.device)
 
-        if not self.include_protected_feature:
+        if not self.include_sensitive_feature:
             data = data[:, self.columns_to_keep]
 
         return data
 
-    def clip(self, data, with_protected_feature=None):
-        if with_protected_feature is None:
-            with_protected_feature = self.include_protected_feature
+    def clip(self, data, with_sensitive_feature=None):
+        if with_sensitive_feature is None:
+            with_sensitive_feature = self.include_sensitive_feature
         def _onehot(data):
             o = torch.zeros_like(data)
             o[torch.arange(data.shape[0]), torch.argmax(data, dim=1)] = 1
@@ -123,19 +125,18 @@ class DataGenerator():
         if len(data.shape) == 1:
             data = data.unsqueeze(0)
         
-        if not with_protected_feature:
-            x = torch.zeros((data.shape[0], data.shape[1] + len(self.sensitive_columns)))
+        if not with_sensitive_feature:
+            x = torch.zeros((data.shape[0], data.shape[1] + len(self.sensitive_idx)))
             x[:, self.columns_to_keep] = data
             data = x
         
         for r in self.onehot_ranges:
             data[:, r[0]: r[1]] = _onehot(data[:, r[0]: r[1]])
-        data_range = self.get_range('data')
+        data_range = self.get_range('data', include_sensitive_feature=True)
         continuous_low, continuous_high = data_range[0][self.continuous_columns], data_range[1][self.continuous_columns]
         data[:, self.continuous_columns] = data[:, self.continuous_columns].clip(continuous_low, continuous_high)
-        # 不取整，其他一致
 
-        if not with_protected_feature:
+        if not with_sensitive_feature:
             data = data[:, self.columns_to_keep]
 
         return data
@@ -150,7 +151,7 @@ class DataGenerator():
         l, u = data_range[0], data_range[1]
         return (u - l)*x_sample + l
     
-    def feature_dataframe(self, feature=None, data=None):
+    def feature_dataframe(self, feature=None, data=None, dtype='int64'):
         if feature == None and data != None:
             feature = self._data2feature(data)
         elif data == None and feature == None:
@@ -158,12 +159,19 @@ class DataGenerator():
         elif data != None and feature != None:
             raise Exception('The value of parameters `feature` and `data` cannot be specified simultaneously.')
         
-        features = pd.DataFrame(feature.detach(), columns=self.feature_name, dtype='int64')
+        features = pd.DataFrame(feature.detach(), columns=self.feature_name, dtype=dtype)
         return features
 
-    def _data2feature(self, data):
+    def _data2feature(self, data, with_sensitive_feature=None):
+        if with_sensitive_feature is None:
+            with_sensitive_feature = self.include_sensitive_feature
         if len(data.shape) == 1:
             data = data.unsqueeze(dim=0)
+
+        if not with_sensitive_feature:
+            x = torch.zeros((data.shape[0], data.shape[1] + len(self.sensitive_idx)))
+            x[:, self.columns_to_keep] = data
+            data = x
 
         continous_feature = data[:, self.continuous_columns]
         onhot_features = []

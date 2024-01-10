@@ -1,22 +1,23 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sklearn.ensemble import RandomForestClassifier
-import pickle
 
 class MLP(nn.Module):
-    def __init__(self, input_size, output_size):
+    def __init__(self, input_size, output_size, data_gen, n_layers=2, norm=False):
         super().__init__()
-        self.fc1 = nn.Linear(input_size, 100)
-        self.fc2 = nn.Linear(100, 100)
-        # self.fc3 = nn.Linear(100, 100)
-        self.fcout = nn.Linear(100, output_size)
-        self.to('cpu')
+        self.fc = nn.ModuleList()
+        self.fc.append(nn.Linear(input_size, 64))
+        for _ in range(n_layers - 1):
+            self.fc.append(nn.Linear(64, 64))
+        self.fcout = nn.Linear(64, output_size)
+        self.data_gen = data_gen
+        self.norm = norm
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        # x = F.relu(self.fc3(x))
+        if self.norm:
+            x = self.data_gen.norm(x)
+        for layer in self.fc:
+            x = F.relu(layer(x))
         x = self.fcout(x)
         return x
     
@@ -38,32 +39,3 @@ class MLP(nn.Module):
             load_path += '.pth'
         device = torch.device('cpu')
         self.load_state_dict(torch.load(load_path, map_location=device))
-
-class RandomForest(nn.Module):
-    def __init__(self, n_estimators=100, max_depth=None):
-        super().__init__()
-        self.random_forest = RandomForestClassifier(n_estimators=n_estimators, max_features=10, max_depth=max_depth)
-
-    def forward(self, x):
-        if len(x.shape) == 1:
-            x = x.unsqueeze(0)
-        x = x.cpu().detach().numpy()
-        return torch.from_numpy(self.random_forest.predict_proba(x))
-    
-    def get_prediction(self, batch):
-        if len(batch.shape) == 1:
-            batch = batch.unsqueeze(0)
-        batch = batch.cpu().detach().numpy()
-        return torch.from_numpy(self.random_forest.predict(batch)).int()
-
-    def save(self, save_path):
-        if save_path.split('.')[-1] != 'pkl':
-            save_path += '.pkl'
-        with open(save_path, 'wb') as file:
-            pickle.dump(self.random_forest, file)
-
-    def load(self, load_path):
-        if load_path.split('.')[-1] != 'pkl':
-            load_path += '.pkl'
-        with open(load_path, 'rb') as file:
-            self.random_forest = pickle.load(file)

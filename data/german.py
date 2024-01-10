@@ -13,7 +13,7 @@ def _read_data_(fpath):
         'existing_credits', 'job', 'maintenance', 'telephone', 'foreign_worker', 'y'
     ]
     data = pd.read_table(fpath, sep=' ', skipinitialspace=True, names=columns)
-    data['y'] = data['y'].replace({'1': 1, '2': 0})
+    data['y'] = data['y'].replace({1: 1, 2: 0})
     
     return data
 
@@ -48,6 +48,16 @@ def _data_preprocess_(rootdir=None):
         'A201': 1, 'A202': 0
     })
 
+    def assign_sex(row):
+        if row['marital'] in ["A91", "A93", "A94"]:
+            return 1
+        elif row['marital'] in ["A92", "A95"]:
+            return 0
+        else:
+            return None 
+
+    data['sex'] = data.apply(assign_sex, axis=1)
+
     categorical_vars = [
         'purpose', 'marital', 'other_debtors', 'property', 'installment_plan', 'housing', 'job'
     ]
@@ -67,24 +77,24 @@ def _get_input_output_df_(data):
     
     return df_X, df_Y
 
-def load_data(protected_vars=None):
-    if protected_vars == None:
-        protected_vars = ['age']
+def load_data(sensitive_vars=None):
+    if sensitive_vars == None:
+        sensitive_vars = ['sex']
 
     df_X, df_Y = _data_preprocess_()
-    protected_idx = [df_X.columns.get_loc(x) for x in protected_vars]
-    for i, c in enumerate(df_X.columns):
-        print(i, c)
+    sensitive_idx = [df_X.columns.get_loc(x) for x in sensitive_vars]
+    # for i, c in enumerate(df_X.columns):
+    #     print(i, c)
 
     X, y = convert_df_to_tensor(df_X, df_Y)
 
-    return X, y, protected_idx
+    return X, y, sensitive_idx
 
 class Generator(DataGenerator):
-    def __init__(self, sensitive_columns, include_protected_feature) -> None:
-        self.X, self.y, self.protected_idx = load_data()
+    def __init__(self, include_sensitive_feature, sensitive_vars, device) -> None:
+        self.X, self.y, self.sensitive_idx = load_data(sensitive_vars)
 
-        self.continuous_columns = [0, 1, 2, 3, 4, 5, 6, 7, 14, 19, 41, 42, 43]
+        self.continuous_columns = [0, 1, 2, 3, 4, 5, 6, 7, 14, 19, 41, 42, 43, 44]
         self.onehot_ranges = [
             [8, 11],
             [11, 14],
@@ -94,14 +104,13 @@ class Generator(DataGenerator):
             [27, 31],
             [31, 41]
         ]
-        self.include_protected_feature = include_protected_feature
         self.feature_name = [
             'acount_status', 'age', 'credit_amount', 'credit_history', 'duration', 'employment_sinc', 'existing_credit',
-            'foreign_worker', 'installment_rate', 'maintenance', 'residence_since', 'saving_acount', 'telephone', 
+            'foreign_worker', 'installment_rate', 'maintenance', 'residence_since', 'saving_acount', 'sex', 'telephone', 
             'housing', 'installment_plan', 'job', 'marital', 'other_debtors', 'property', 'purpose'
         ]
 
-        super()._initialize(sensitive_columns=sensitive_columns)
+        super().__init__(include_sensitive_feature, device)
 
 __all__ = [
     'load_data',

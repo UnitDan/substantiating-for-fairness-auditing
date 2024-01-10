@@ -6,6 +6,21 @@ import random
 
 from seeker.seeker import Seeker
 
+class TensorStorage:
+    def __init__(self):
+        self.storage = {}
+
+    def _key(self, tensor):
+        return tuple(tensor.squeeze().tolist())
+
+    def add_tensor(self, tensor, logits):
+        self.storage[self._key(tensor)] = logits
+    
+    def has_tensor(self, tensor):
+        return self._key(tensor) in self.storage
+    
+    def query_logits(self, tensor):
+        return self.storage[self._key(tensor)]
 
 class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
     def __init__(self, model, unfair_metric: UnfairMetric, data_gen: DataGenerator):
@@ -16,10 +31,17 @@ class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
 
         data_range = self.data_gen.get_range('data')
         self.scale = data_range[1] - data_range[0]
+        self.query_history = TensorStorage()
 
         self.cur_delta = torch.Tensor()
         self.cur_x = torch.Tensor()
         self.cur_g = None
+
+    def _clip(self, X):
+        data_range = self.get_range('data', include_sensitive_feature=True)
+        continuous_low, continuous_high = data_range[0][self.continuous_columns], data_range[1][self.continuous_columns]
+        X[:, self.continuous_columns] = X[:, self.continuous_columns].clip(continuous_low, continuous_high)
+        return X
 
     def _norm(self, x):
         return self.data_gen.norm(x)
@@ -28,34 +50,51 @@ class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
         return self.data_gen.recover(x)
     
     def _query_logits(self, x):
-        if len(x.shape) == 1:
-            self.n_query += 1
-        else:
-            self.n_query += x.shape[0]
         x = self._recover(x)
-        return self.model(x)
+
+        if self.query_history.has_tensor(x):
+            logits = self.query_history.query_logits(x)
+        else:
+            if len(x.shape) == 1:
+                self.n_query += 1
+            else:
+                self.n_query += x.shape[0]
+            logits = self.model(x)
+            self.query_history.add_tensor(x, logits.detach())
+        return logits
     
     def _query_label(self, x):
-        if len(x.shape) == 1:
-            self.n_query += 1
-        else:
-            self.n_query += x.shape[0]
-        x = self._recover(x)
-        return self.model.get_prediction(x)
+        logits = self._query_logits(x)
+        _, y_pred = torch.max(logits, dim=1)
+        return y_pred
 
     def _check(self, x1, x2, additional_query=0):
         '''
         x1 and x2 should be recovered.
         '''
-        # x1, x2 = self._recover(x1), self._recover(x2)
-        y1 = self.model.get_prediction(x1)
-        y2 = self.model.get_prediction(x2)
+        def _query_label(x):
+            if self.query_history.has_tensor(x):
+                logits = self.query_history.query_logits(x)
+            else:
+                if len(x.shape) == 1:
+                    self.n_query += 1
+                else:
+                    self.n_query += x.shape[0]
+                logits = self.model(x)
+                self.query_history.add_tensor(x, logits.detach())
+            _, y_pred = torch.max(logits, dim=1)
+            return y_pred
+            
+        y1 = _query_label(x1)
+        y2 = _query_label(x2)
         self.n_query += additional_query
         return self.unfair_metric.is_unfair(x1, x2, y1, y2)
 
+    
     def loss(self, x):
         if len(x.shape) == 1:
             x = x.unsqueeze(0)
+        x = self._clip(x)
         y = self._query_logits(x)[0]
         return y[self.origin_label] - y[self.mis_label]
     
@@ -68,6 +107,9 @@ class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
 
     def step1(self, x, delta, lr, lamb):
         g = self._gradient1(x, delta, lamb)
+        if torch.all(g == 0):
+            print('g == 0')
+            return None
         # print('------------g----------------')
         # print(g)
         # print('-----------------------------')
@@ -120,7 +162,9 @@ class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
         x_recover0 = x_recover.clone()
         g = None
         for _ in range(max_iter):
-            
+            # print('---------------------\nafter converge')
+            # print(x_recover)
+            # print(self.data_gen.data_format(x_recover), '\n')
             if g == None:
                 g = self._gradient2(x_recover)
                 g_direction = torch.sign(g).squeeze()
@@ -129,16 +173,20 @@ class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
                 return None
             x1_candidate = torch.round(self.data_gen.clip(x_recover - torch.diag(g_direction)))
             diff = torch.any(x1_candidate.int() != x_recover0.int(), dim=1)
+            if diff.shape[0] == 0:
+                print('diff == None')
+                return None
             x1_candidate = x1_candidate[diff]
-            # print(diff)
-            # print(x1_candidate)
 
             distances = self.unfair_metric.dx(x_recover0, x1_candidate, itemwise_dist=False).squeeze()
             d_min, idx = torch.min(distances, dim=0)
+            print('origin:', x_recover)
+            print()
             if d_min < 1/self.unfair_metric.epsilon:
                 x_step = x1_candidate[idx].unsqueeze(0)
-                print('x_step after converge\n', x_step)
-                if self._check(x_recover0, x_step, 1):
+                # print('x_step after converge\n', x_step)
+                # print()
+                if self._check(x_recover0, x_step):
                     pair = torch.concat([x_recover0, x_step], dim=0)
                     return pair
                 else:
@@ -176,6 +224,10 @@ class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
             
             # stage 1: fine a x0, which is most likely to have a adversarial
             delta_next = self.step1(x=x0, delta=delta_t, lr=lr, lamb=lamb)
+            if delta_next == None:
+                print('restart', self.n_query)
+                x0, delta_t, x_t, pred_t, lr = init()
+                continue
             # print('length of the perturbation of delta:', torch.norm(delta_next - delta_t, p=2), sep='\n')
             x_next = self._norm(torch.round(self._recover(x0+delta_next)))
             pred_next = self._query_logits(x_next)[0]
@@ -185,9 +237,9 @@ class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
             if torch.all(x_next == x_t):
                 print('converge', 'n_query:', self.n_query, 'n_iters', self.n_iters)
                 print(self._recover(x0)[0].int())
-                # print(self.model(self._recover(x0)))
+                print(self._query_logits(x0))
                 print(self._recover(x_t)[0].int(), self.n_query)
-                # print(self.model(self._recover(x_t)))
+                print(self._query_logits(x_t))
                 # exit()
                 x1 = x_t.detach()
                 result = self.after_converge(x1)
@@ -207,31 +259,6 @@ class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
                 delta_t = delta_next.detach()
                 self.n_iters += 1
 
-class WhiteboxSeeker(GradiantBasedSeeker):
-    def _gradient1(self, x, delta, lamb):
-        delta.requires_grad=True
-        if self.cur_delta.shape[0] != 0 and torch.all(self.cur_delta == delta):
-            g = self.cur_g
-        else:
-            loss = self.loss(x+delta) + lamb * self.reg(delta)
-            loss.backward()
-            g = delta.grad
-            self.cur_delta = delta.clone()
-            self.cur_g = g.clone()
-        return g
-
-    def _gradient2(self, x):
-        x.requires_grad=True
-        if self.cur_x.shape[0] != 0 and torch.all(self.cur_x == x):
-            g = self.cur_g
-        else:
-            loss = self.loss(self._norm(x))
-            loss.backward()
-            g = x.grad
-            self.cur_x = x.clone()
-            self.cur_g = g.clone()
-        return g
-    
 class BlackboxSeeker(GradiantBasedSeeker):
     def __init__(self, model, unfair_metric: UnfairMetric, data_gen: DataGenerator, g_range=1e-1, easy=True):
         super().__init__(model, unfair_metric, data_gen)
@@ -259,8 +286,7 @@ class BlackboxSeeker(GradiantBasedSeeker):
                 # print()
                 g[i] = (loss(x, pert_delta[0], lamb) \
                       - loss(x, pert_delta[1], lamb))/2
-                # print(loss(x, pert_delta[0], lamb))
-                # print(loss(x, pert_delta[1], lamb))
+                print(loss(x, pert_delta[0], lamb), loss(x, pert_delta[1], lamb))
                 # input()
             self.cur_delta = delta.clone()
             self.cur_g = g
@@ -270,6 +296,8 @@ class BlackboxSeeker(GradiantBasedSeeker):
     
     def _gradient2(self, x):
         self.cur_delta = torch.Tensor()
+        print('\nquery for gradient2')
+        print(x)
 
         if self.cur_x.shape[0] != 0 and torch.all(self.cur_x == x):
             g = self.cur_g
@@ -279,25 +307,9 @@ class BlackboxSeeker(GradiantBasedSeeker):
                 pert = torch.zeros_like(x).squeeze()
                 pert[i] = 1
                 g[i] = (self.loss(self._norm(x + pert)) - self.loss(self._norm(x - pert)))/2
+                print()
+                print(self.loss(self._norm(x + pert)), self.loss(self._norm(x - pert)))
             self.cur_x = x.clone()
             self.cur_g = g
-        return g
-    
-class FoolSeeker(BlackboxSeeker):
-    def _gradient1(self, x, delta, lamb):
-        if self.cur_g != None and self.easy:
-            g = self.cur_g
-        else:
-            g = torch.rand_like(x).squeeze()
-            self.cur_g = g
-        return g
-    
-    def _gradient2(self, x):
-        self.cur_delta = torch.Tensor()
-
-        if self.cur_x.shape[0] != 0 and torch.all(self.cur_x == x):
-            g = self.cur_g
-        else:
-            g = torch.rand_like(x).squeeze()
-            self.cur_g = g
+        print(g)
         return g

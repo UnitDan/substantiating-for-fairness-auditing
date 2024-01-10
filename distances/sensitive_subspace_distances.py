@@ -46,7 +46,7 @@ class SensitiveSubspaceDistance(MahalanobisDistances):
             basis_vectors: torch.Tensor
                 Basis vectors of the sensitive subspace
                 Dimension (d, k) where d is the data features dimension
-                and k is the number of protected dimensions
+                and k is the number of sensitive dimensions
 
         Returns
         ----------
@@ -112,8 +112,8 @@ class LogisticRegSensitiveSubspace(SensitiveSubspaceDistance):
         data_X: torch.Tensor,
         data_gen: DataGenerator,
         data_SensitiveAttrs: torch.Tensor = None,
-        protected_idxs: Iterable[int] = None,
-        keep_protected_idxs: bool = True,
+        sensitive_idxs: Iterable[int] = None,
+        keep_sensitive_idxs: bool = True,
         autoinfer_device: bool = True,
     ):
         """Fit Logistic Regression Sensitive Subspace distance metric
@@ -123,24 +123,24 @@ class LogisticRegSensitiveSubspace(SensitiveSubspaceDistance):
             data_X: torch.Tensor
                 Input data corresponding to either :math:`X_i` or :math:`(X_i, K_i)` in the equation above.
                 If the variable corresponds to :math:`X_i`, then the `y_train` parameter should be specified.
-                If the variable corresponds to :math:`(X_i, K_i)` then the `protected_idxs` parameter
+                If the variable corresponds to :math:`(X_i, K_i)` then the `sensitive_idxs` parameter
                 should be specified to indicate the sensitive attributes.
 
             data_SensitiveAttrs: torch.Tensor
                 Represents the sensitive attributes ( :math:`K_i` ) and is used when the `X_train` parameter
                 represents :math:`X_i` from the equation above. **Note**: This parameter is mutually exclusive
-                with the `protected_idxs` parameter. Specififying both the `data_SensitiveAttrs` and `protected_idxs`
+                with the `sensitive_idxs` parameter. Specififying both the `data_SensitiveAttrs` and `sensitive_idxs`
                 parameters will raise an error
 
-            protected_idxs: Iterable[int]
+            sensitive_idxs: Iterable[int]
                 If the `X_train` parameter above represents :math:`(X_i, K_i)`, then this parameter is used
                 to provide the indices of sensitive attributes in `X_train`. **Note**: This parameter is mutually exclusive
-                with the `protected_idxs` parameter. Specififying both the `data_SensitiveAttrs` and `protected_idxs`
+                with the `sensitive_idxs` parameter. Specififying both the `data_SensitiveAttrs` and `sensitive_idxs`
                 parameters will raise an error
 
-            keep_protected_indices: bool
-                True, if while training the model, protected attributes will be part of the training data
-                Set to False, if for training the model, protected attributes will be excluded
+            keep_sensitive_indices: bool
+                True, if while training the model, sensitive attributes will be part of the training data
+                Set to False, if for training the model, sensitive attributes will be excluded
                 Default = True
 
             autoinfer_device: bool
@@ -150,27 +150,27 @@ class LogisticRegSensitiveSubspace(SensitiveSubspaceDistance):
                 on CPU.
         """
 
-        if data_SensitiveAttrs is not None and protected_idxs is None:
-            data_range = data_gen.get_range('data', include_protected_feature=False)
+        if data_SensitiveAttrs is not None and sensitive_idxs is None:
+            data_range = data_gen.get_range('data', include_sensitive_feature=False)
             data_X = (data_X - data_range[0])/(data_range[1] - data_range[0])
 
             basis_vectors_ = self.compute_basis_vectors_data(
                 X_train=data_X, y_train=data_SensitiveAttrs
             )
 
-        elif data_SensitiveAttrs is None and protected_idxs is not None:
-            data_range = data_gen.get_range('data', include_protected_feature=True)
+        elif data_SensitiveAttrs is None and sensitive_idxs is not None:
+            data_range = data_gen.get_range('data', include_sensitive_feature=True)
             data_X = (data_X - data_range[0])/(data_range[1] - data_range[0])
 
-            basis_vectors_ = self.compute_basis_vectors_protected_idxs(
+            basis_vectors_ = self.compute_basis_vectors_sensitive_idxs(
                 data_X,
-                protected_idxs=protected_idxs,
-                keep_protected_idxs=keep_protected_idxs,
+                sensitive_idxs=sensitive_idxs,
+                keep_sensitive_idxs=keep_sensitive_idxs,
             )
 
         else:
             raise AssertionError(
-                "Parameters `y_train` and `protected_idxs` are exclusive. Either of these two parameters should be None, and cannot be set to non-None values simultaneously."
+                "Parameters `y_train` and `sensitive_idxs` are exclusive. Either of these two parameters should be None, and cannot be set to non-None values simultaneously."
             )
 
         super().fit(basis_vectors_, data_gen)
@@ -180,8 +180,8 @@ class LogisticRegSensitiveSubspace(SensitiveSubspaceDistance):
             device = datautils.get_device(data_X)
             super().to(device)
 
-    def compute_basis_vectors_protected_idxs(
-        self, data, protected_idxs, keep_protected_idxs=True
+    def compute_basis_vectors_sensitive_idxs(
+        self, data, sensitive_idxs, keep_sensitive_idxs=True
     ):
 
         dtype = data.dtype
@@ -190,47 +190,47 @@ class LogisticRegSensitiveSubspace(SensitiveSubspaceDistance):
         basis_vectors_ = []
         num_attr = data.shape[1]
 
-        # Get input data excluding the protected attributes
-        protected_idxs = sorted(protected_idxs)
-        free_idxs = [idx for idx in range(num_attr) if idx not in protected_idxs]
+        # Get input data excluding the sensitive attributes
+        sensitive_idxs = sorted(sensitive_idxs)
+        free_idxs = [idx for idx in range(num_attr) if idx not in sensitive_idxs]
         X_train = data[:, free_idxs]
-        Y_train = data[:, protected_idxs]
+        Y_train = data[:, sensitive_idxs]
 
         self.__assert_sensitiveattrs_binary__(Y_train)
 
         self._logreg_models = [
             LogisticRegression(solver="liblinear", penalty="l1")
             .fit(X_train, Y_train[:, idx])
-            for idx in range(len(protected_idxs))
+            for idx in range(len(sensitive_idxs))
         ]
 
         coefs = np.array(
             [
                 self._logreg_models[idx].coef_.squeeze()
-                for idx in range(len(protected_idxs))
+                for idx in range(len(sensitive_idxs))
             ]
-        )  # ( |protected_idxs|, |free_idxs| )
+        )  # ( |sensitive_idxs|, |free_idxs| )
 
-        if keep_protected_idxs:
-            # To keep protected indices, we add two basis vectors
+        if keep_sensitive_idxs:
+            # To keep sensitive indices, we add two basis vectors
             # First, with logistic regression coefficients with 0 in
-            # protected indices. Second, with one-hot vectors with 1 in
-            # protected indices.
+            # sensitive indices. Second, with one-hot vectors with 1 in
+            # sensitive indices.
 
-            basis_vectors_ = np.empty(shape=(2 * len(protected_idxs), num_attr))
+            basis_vectors_ = np.empty(shape=(2 * len(sensitive_idxs), num_attr))
 
-            for i, protected_idx in enumerate(protected_idxs):
+            for i, sensitive_idx in enumerate(sensitive_idxs):
 
-                protected_basis_vector = np.zeros(shape=(num_attr))
-                protected_basis_vector[protected_idx] = 1.0
+                sensitive_basis_vector = np.zeros(shape=(num_attr))
+                sensitive_basis_vector[sensitive_idx] = 1.0
 
-                unprotected_basis_vector = np.zeros(shape=(num_attr))
+                unsensitive_basis_vector = np.zeros(shape=(num_attr))
                 np.put_along_axis(
-                    unprotected_basis_vector, np.array(free_idxs), coefs[i], axis=0
+                    unsensitive_basis_vector, np.array(free_idxs), coefs[i], axis=0
                 )
 
-                basis_vectors_[2 * i] = unprotected_basis_vector
-                basis_vectors_[2 * i + 1] = protected_basis_vector
+                basis_vectors_[2 * i] = unsensitive_basis_vector
+                basis_vectors_[2 * i + 1] = sensitive_basis_vector
         else:
             # Protected indices are to be discarded. Therefore, we can
             # simply return back the logistic regression coefficients
