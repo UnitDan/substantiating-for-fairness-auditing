@@ -60,7 +60,8 @@ class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
         return y[self.origin_label] - y[self.mis_label]
     
     def reg(self, delta):
-        return torch.norm((1 - self.sensitiveness)*torch.abs(delta), p=2)
+        # return torch.norm((1 - self.sensitiveness)*torch.abs(delta), p=2)
+        return torch.norm((1 - self.sensitiveness)*delta, p=2)
 
     @abstractmethod
     def _gradient1(self, x, delta, lamb):
@@ -125,7 +126,7 @@ class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
                 g = self._gradient2(x_recover)
                 g_direction = torch.sign(g).squeeze()
             if torch.all(g_direction == 0):
-                print('g == 0')
+                # print('g == 0')
                 return None
             x1_candidate = torch.round(self.data_gen.clip(x_recover - torch.diag(g_direction)))
             diff = torch.any(x1_candidate.int() != x_recover0.int(), dim=1)
@@ -137,7 +138,7 @@ class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
             d_min, idx = torch.min(distances, dim=0)
             if d_min < 1/self.unfair_metric.epsilon:
                 x_step = x1_candidate[idx].unsqueeze(0)
-                print('x_step after converge\n', x_step)
+                # print('x_step after converge\n', x_step)
                 if self._check(x_recover0, x_step, 1):
                     pair = torch.concat([x_recover0, x_step], dim=0)
                     return pair
@@ -183,26 +184,26 @@ class GradiantBasedSeeker(Seeker, metaclass=ABCMeta):
 
             # converage, then stage 2: find an adversarial of x1=(x+delta_t)
             if torch.all(x_next == x_t):
-                print('converge', 'n_query:', self.n_query, 'n_iters', self.n_iters)
-                print(self._recover(x0)[0].int())
+                # print('converge', 'n_query:', self.n_query, 'n_iters', self.n_iters)
+                # print(self._recover(x0)[0].int())
                 # print(self.model(self._recover(x0)))
-                print(self._recover(x_t)[0].int(), self.n_query)
+                # print(self._recover(x_t)[0].int(), self.n_query)
                 # print(self.model(self._recover(x_t)))
                 # exit()
                 x1 = x_t.detach()
                 result = self.after_converge(x1)
                 if result == None:
-                    print('restart', self.n_query)
+                    # print('restart', self.n_query)
                     x0, delta_t, x_t, pred_t, lr = init()
                     continue
                     # return None, self.n_query, self.n_iters
                 return result, self.n_query
             
             if pred_next[self.origin_label] - pred_next[self.mis_label] <= 1e-4:
-                print('lr too large', lr)
+                # print('lr too large', lr)
                 lr /= 2
             else:
-                print('next')
+                # print('next')
                 x_t = x_next
                 delta_t = delta_next.detach()
                 self.n_iters += 1
@@ -233,10 +234,9 @@ class WhiteboxSeeker(GradiantBasedSeeker):
         return g
     
 class BlackboxSeeker(GradiantBasedSeeker):
-    def __init__(self, model, unfair_metric: UnfairMetric, data_gen: DataGenerator, g_range=1e-1, easy=True):
+    def __init__(self, model, unfair_metric: UnfairMetric, data_gen: DataGenerator, easy=True):
         super().__init__(model, unfair_metric, data_gen)
         self.easy = easy
-        self.g_range = g_range
     
     def _gradient1(self, x, delta, lamb):
         loss = lambda x, delta, lamb: self.loss(x+delta) + lamb * self.reg(delta)
@@ -264,7 +264,7 @@ class BlackboxSeeker(GradiantBasedSeeker):
                 # input()
             self.cur_delta = delta.clone()
             self.cur_g = g
-            print(g)
+            # print(g)
             # exit()
         return g
     

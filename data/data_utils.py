@@ -190,7 +190,7 @@ class DataGenerator():
             feature = feature.unsqueeze(dim=0)
 
         data_length = self.X.shape[1]
-        data = torch.zeros((feature.shape[0], data_length))
+        data = torch.zeros((feature.shape[0], data_length)).to(self.device)
         
         continous_id = list(range(len(self.continuous_columns)))
         data[:, self.continuous_columns] = feature[:, continous_id]

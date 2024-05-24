@@ -58,7 +58,7 @@ class RandomSeeker(Seeker):
         x1_candidate = x1_candidate[diff]
         return x1_candidate
 
-    def _pert(self, x):
+    def _pert(self, x, p_stop):
         x_origin = x.clone()
 
         searched = torch.Tensor()
@@ -80,11 +80,11 @@ class RandomSeeker(Seeker):
             pert_data = x1_candidate[random.randint(0, x1_candidate.shape[0] - 1)]
             searched = torch.concat([searched, pert_data.unsqueeze(0)], dim=0)
 
-            if random.random() > 0.5:
+            if random.random() > p_stop:
                 break
         return pert_data
             
-    def seek(self, max_query=1e3):
+    def seek(self, max_query=1e3, p_stop=0.5):
         self.n_query = 0
         pair = None
 
@@ -92,7 +92,7 @@ class RandomSeeker(Seeker):
             x0 = self.gen_x0()
             if x0 == None:
                 break
-            x1 = self._pert(x0).unsqueeze(0)
+            x1 = self._pert(x0, p_stop).unsqueeze(0)
             # x1 = self.data_gen.random_perturb(x0, self.unfair_metric).unsqueeze(0)
             t_pair = torch.concat([x0, x1], dim=0)
             if self._check(t_pair[0], t_pair[1], additional_query=2):

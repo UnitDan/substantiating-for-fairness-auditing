@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 from distances.distance import Distance
-from torch import vmap
+from functorch import vmap
 
 
 class MahalanobisDistances(Distance):
